@@ -98,12 +98,30 @@ static ABI int32_t mutex_unlock(GuestMutex **mutex) {
     if (!e) ++unlocks;
     return e;
 }
+/* Destroyed mutexes are retired through a ring and only freed after many later destroys: a game
+ * may destroy a mutex while another thread is still leaving an unlock or a condition wait on it
+ * (the PS4 kernel tolerates it; freeing at once crashed inside winpthread with NpToolkit2). */
+#define RETIRED 8192
+static GuestMutex *retired[RETIRED];
+static size_t retired_next;
+static pthread_mutex_t retired_lock = PTHREAD_MUTEX_INITIALIZER;
 static ABI int32_t mutex_destroy(GuestMutex **mutex) {
     if (!mutex || (uintptr_t)*mutex == 2) return orbis_error(EINVAL);
     if ((uintptr_t)*mutex < 2) return 0;
-    int e = pthread_mutex_destroy(&(*mutex)->native);
-    if (!e) { free(*mutex); *mutex = (GuestMutex *)(uintptr_t)2; }
-    return orbis_error(e);
+    GuestMutex *dead = *mutex;
+    if (pthread_mutex_trylock(&dead->native)) return orbis_error(EBUSY); /* still held */
+    pthread_mutex_unlock(&dead->native);
+    *mutex = (GuestMutex *)(uintptr_t)2;
+    pthread_mutex_lock(&retired_lock);
+    GuestMutex *oldest = retired[retired_next];
+    retired[retired_next] = dead;
+    retired_next = (retired_next + 1) % RETIRED;
+    pthread_mutex_unlock(&retired_lock);
+    if (oldest) {
+        pthread_mutex_destroy(&oldest->native);
+        free(oldest);
+    }
+    return 0;
 }
 static int deadline_after(struct timespec *end, uint64_t usec) {
     if (clock_gettime(CLOCK_REALTIME, end)) return errno;
@@ -151,9 +169,21 @@ static int32_t ensure_cond(GuestCond **cond) {
 static ABI int32_t cond_destroy(GuestCond **cond) {
     if (!cond) return orbis_error(EINVAL);
     if ((uintptr_t)*cond < 2) return 0;
-    int e = pthread_cond_destroy(&(*cond)->native);
-    if (!e) { free(*cond); *cond = NULL; }
-    return orbis_error(e);
+    /* Retired like mutexes: a woken waiter may still be returning through it. */
+    static GuestCond *retired_conds[RETIRED];
+    static size_t next;
+    GuestCond *dead = *cond;
+    *cond = NULL;
+    pthread_mutex_lock(&retired_lock);
+    GuestCond *oldest = retired_conds[next];
+    retired_conds[next] = dead;
+    next = (next + 1) % RETIRED;
+    pthread_mutex_unlock(&retired_lock);
+    if (oldest) {
+        pthread_cond_destroy(&oldest->native);
+        free(oldest);
+    }
+    return 0;
 }
 static ABI int32_t cond_wait(GuestCond **cond, GuestMutex **mutex) {
     int32_t e = ensure_cond(cond);

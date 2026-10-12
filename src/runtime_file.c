@@ -237,6 +237,10 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     Listing *dir=NULL;
     if (!fstat(host,&s) && S_ISDIR(s.st_mode)) dir=list_directory(path);
 #endif
+    /* GOW3_FILE_TRACE=1: every file the game opens (mod and pak override checks). */
+    static int file_trace=-1;
+    if (file_trace<0) { const char *t=getenv("GOW3_FILE_TRACE"); file_trace=t && t[0]=='1'; }
+    if (file_trace) printf("Runtime: open(%s)%s\n",guest,dir ? " [directory]" : "");
     pthread_mutex_lock(&lock);
     int fd=-1;
     for (int i=3;i<MAX_FILES;++i) if (!files[i].used) { fd=i; break; }

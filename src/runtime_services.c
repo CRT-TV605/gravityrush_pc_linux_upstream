@@ -534,6 +534,15 @@ static ABI int32_t discmap_8a82(const char *path,int64_t offset,int64_t size,int
     (void)path; (void)offset; (void)size; (void)flags; (void)r1; (void)r2; return DISC_MAP_NO_BITMAP;
 }
 
+/* sceDiscMap 0x7C980FFB0AA27E7A (libSceFios2, same arguments): no disc bitmap, nothing pending. */
+static ABI int32_t discmap_7c98(const char *path,int64_t offset,int64_t size,int32_t *flags,int32_t *r1,int32_t *r2) {
+    (void)path; (void)offset; (void)size;
+    if (flags) *flags=0;
+    if (r1) *r1=0;
+    if (r2) *r2=0;
+    return ORBIS_OK;
+}
+
 /* ---- Devices that are absent: mouse, microphone, voice chat ---- */
 /* A mouse port opens but never reports a connected device. */
 static ABI int32_t mouse_open(int32_t user,int32_t type,int32_t index,const void *param) { (void)user; (void)type; (void)index; (void)param; return new_id(); }
@@ -601,6 +610,44 @@ static const RuntimeExport exports[]={
     {"sceNpLookupAbortRequest",ok_void}, {"sceNpLookupPollAsync",np_poll}, {"sceNpLookupNpId",np_signed_out},
     {"sceNpScoreCreateNpTitleCtx",np_request_ctx}, {"sceNpScoreDeleteNpTitleCtx",ok_void},
     {"sceNpScoreCreateRequest",np_request}, {"sceNpScoreDeleteRequest",ok_void}, {"sceNpScoreAbortRequest",ok_void},
+    /* NpToolkit2 (linked from the game's sce_module) and the A/AccountId variants: signed out. */
+    {"sceNetCtlRegisterCallbackForNpToolkit",netctl_register}, {"sceNetCtlCheckCallbackForNpToolkit",netctl_check},
+    {"sceNetCtlUnregisterCallbackForNpToolkit",netctl_unregister},
+    {"sceNpRegisterStateCallbackForToolkit",np_register}, {"sceNpUnregisterStateCallbackForToolkit",ok_void},
+    {"sceNpCheckCallbackForLib",ok_void},
+    {"sceUserServiceRegisterEventCallback",ok_void}, {"sceUserServiceUnregisterEventCallback",ok_void},
+    {"sceNpCreateRequest",np_request}, {"sceNpCheckNpAvailabilityA",np_signed_out},
+    {"sceNpGetAccountIdA",np_signed_out}, {"sceNpGetParentalControlInfoA",np_signed_out},
+    {"sceNpGetUserIdByAccountId",np_signed_out},
+    {"sceNpInGameMessageInitialize",lib_init_id}, {"sceNpInGameMessageTerminate",ok_void},
+    {"sceNpInGameMessageCreateHandle",np_request_ctx}, {"sceNpInGameMessageDeleteHandle",ok_void},
+    {"sceNpInGameMessagePrepareA",np_signed_out}, {"sceNpInGameMessageSendDataA",np_signed_out},
+    {"sceNpAuthCreateRequest",np_request}, {"sceNpAuthAbortRequest",ok_void},
+    {"sceNpAuthGetAuthorizationCodeA",np_signed_out}, {"sceNpAuthGetIdTokenA",np_signed_out},
+    {"sceNpTusCreateNpTitleCtxA",np_request_ctx}, {"sceNpTssCreateNpTitleCtxA",np_request_ctx},
+    {"sceNpTusDeleteNpTitleCtx",ok_void}, {"sceNpTusCreateRequest",np_request}, {"sceNpTusDeleteRequest",ok_void},
+    {"sceNpTusAbortRequest",ok_void}, {"sceNpTusPollAsync",np_poll},
+    {"sceNpTusGetDataAAsync",np_signed_out}, {"sceNpTusSetDataAAsync",np_signed_out},
+    {"sceNpTusGetMultiSlotDataStatusAAsync",np_signed_out}, {"sceNpTusDeleteMultiSlotDataAAsync",np_signed_out},
+    {"sceNpTssGetDataAsync",np_signed_out}, {"sceNpTssGetData",np_signed_out},
+    {"sceNpScoreCreateNpTitleCtxA",np_request_ctx}, {"sceNpScorePollAsync",np_poll},
+    {"sceNpScoreRecordScoreAsync",np_signed_out}, {"sceNpScoreGetRankingByAccountIdAsync",np_signed_out},
+    {"sceNpScoreGetRankingByAccountId",np_signed_out}, {"sceNpScoreGetFriendsRankingA",np_signed_out},
+    {"sceNpWordFilterCreateTitleCtxA",np_request_ctx}, {"sceNpWordFilterDeleteTitleCtx",ok_void},
+    {"sceNpWordFilterCreateRequest",np_request}, {"sceNpWordFilterDeleteRequest",ok_void},
+    {"sceNpWordFilterAbortRequest",ok_void}, {"sceNpWordFilterSanitizeComment",np_signed_out},
+    {"sceNpBandwidthTestInitStart",np_signed_out}, {"sceNpBandwidthTestShutdown",ok_void},
+    {"sceNpBandwidthTestAbort",ok_void},
+    {"sceNpMatching2CreateContextA",np_signed_out},
+    {"sceNpWebApiCreateContextA",np_signed_out}, {"sceNpWebApiCreateHandle",np_request},
+    {"sceNpWebApiDeleteHandle",ok_void},
+    {"sceNpWebApiCheckTimeout",ok_void}, {"sceNpWebApiSetRequestTimeout",ok_void},
+    {"sceNpWebApiAddHttpRequestHeader",ok_void}, {"sceNpWebApiSendRequest2",np_signed_out},
+    {"sceNpWebApiCreateExtdPushEventFilter",np_signed_out}, {"sceNpWebApiDeleteExtdPushEventFilter",ok_void},
+    {"sceNpSnsFacebookCreateRequest",np_request}, {"sceNpSnsFacebookDeleteRequest",ok_void},
+    {"sceNpSnsFacebookGetAccessToken",np_signed_out},
+    {"sceSigninDialogInitialize",ok_void}, {"sceSigninDialogTerminate",ok_void},
+    {"sceNpSnsFacebookDialogInitialize",ok_void}, {"sceNpSnsFacebookDialogTerminate",ok_void},
     {"sceNpWebApiInitialize",lib_init_id}, {"sceNpWebApiTerminate",ok_void},
     {"sceNpWebApiCreateContext",np_signed_out},
     {"sceNpWebApiCreateRequest",np_signed_out}, {"sceNpWebApiSendRequest",np_signed_out},
@@ -669,6 +716,7 @@ static const RuntimeExport exports[]={
     {"sceMouseInit",ok_void}, {"sceMouseOpen",mouse_open}, {"sceMouseRead",mouse_read}, {"sceMouseClose",mouse_close},
     {"sceAudioInOpen",audio_in_open},
     {"sceDiscMapIsRequestOnHDD",discmap_on_hdd}, {"sceDiscMap_8A828CAEE7EDD5E9",discmap_8a82},
+    {"sceDiscMap_7C980FFB0AA27E7A",discmap_7c98},
     {"sceVoiceInit",ok_void}, {"sceVoiceEnd",ok_void},
 };
 uintptr_t runtime_services_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

@@ -97,9 +97,39 @@ def main():
         if clang64.is_dir():
             env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
 
-    game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA01623'))
+    game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA11227'))
+    if game.suffix.lower() == '.pkg' and game.is_file():
+        # A PKG is unpacked once beside it (<folder>/<TITLE_ID>); later starts reuse the folder.
+        import pkg_extract
+        target = Path(env.get('GOW3_PKG_TARGET') or pkg_extract.default_target(game))
+        if not pkg_extract.is_extracted(game, target):
+            print(f'Unpacking {game.name} into {target} (first start only)…', flush=True)
+            last = [-1]
+
+            def report(done, total, rate):
+                percent = done * 100 // max(total, 1)
+                if percent != last[0]:
+                    last[0] = percent
+                    print(f'PKG: {percent}% ({done >> 20} of {total >> 20} MB, {rate:.0f} MB/s)', flush=True)
+            try:
+                pkg_extract.extract(game, target, report)
+            except (OSError, ValueError) as error:
+                fail(f'Could not unpack {game}: {error}')
+        game = target
     if not (game / 'eboot.bin').is_file():
-        fail(f'No eboot.bin in {game} (set GOW3_GAME_DIR).')
+        fail(f'No eboot.bin in {game} (set GOW3_GAME_DIR to the game folder or its .pkg).')
+    import game_profiles
+    profile = game_profiles.profile(game)
+    if profile['name']:
+        print(f'Game profile: {profile["name"]} ({", ".join(profile["modules"])})', flush=True)
+    for key, value in profile['env'].items():
+        env.setdefault(key, value)
+    if profile.get('ue4_render_scale'):
+        import ue4_override
+        try:
+            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution']), flush=True)
+        except (OSError, ValueError) as error:
+            print(f'Render resolution: unchanged ({error})', flush=True)
     original_game = game.resolve()
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('GOW3_MODS_DIR', data / 'mods'),
@@ -109,7 +139,7 @@ def main():
     try:
         run_script('prepare.py', game, '--out', out)
         run_script('link_libc.py', game, '--out', out)
-        run_script('link_modules.py', game, '--out', out)
+        run_script('link_modules.py', game, '--out', out, '--modules', *profile['modules'])
         run_script('content_profile.py', game, '--out', out, '--sku', env.get('GOW3_CONTENT_SKU', 'full'))
 
         from patches import (eboot_matches, game_app_version, game_profile, game_title_id,

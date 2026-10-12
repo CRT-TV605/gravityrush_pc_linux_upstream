@@ -403,6 +403,12 @@ static int direct_range_allocated(uint64_t phys, uint64_t size) {
 }
 
 static ABI uint64_t direct_size(void) { return POOL_SIZE; }
+uint64_t runtime_memory_flexible_available(void) {
+    read_lock();
+    uint64_t used=flexible_bytes;
+    read_unlock();
+    return used<FLEXIBLE_SIZE ? FLEXIBLE_SIZE-used : 0;
+}
 static ABI int32_t direct_allocate(int64_t low, int64_t high, uint64_t size,
                                   uint64_t alignment, int type, int64_t *out) {
     if (!alignment) alignment = PAGE;
@@ -643,8 +649,120 @@ static ABI int32_t batch_map2(BatchEntry *entries, int count, int *processed, in
 static ABI int32_t batch_map(BatchEntry *entries, int count, int *processed) {
     return batch_map2(entries,count,processed,MAP_FIXED_FLAG);
 }
+static ABI int32_t main_allocate(uint64_t size, uint64_t alignment, int type, int64_t *out) {
+    return direct_allocate(0,(int64_t)POOL_SIZE,size,alignment,type,out);
+}
+/* Largest free direct-memory range in [low,high) at the given alignment. */
+static ABI int32_t direct_available(int64_t low, int64_t high, uint64_t alignment, int64_t *out_start, uint64_t *out_size) {
+    if (!alignment) alignment=PAGE;
+    if (!out_start || !out_size || low<0 || high<=low || !valid_alignment(alignment)) return INVALID;
+    uint64_t end=(uint64_t)high<POOL_SIZE ? (uint64_t)high : POOL_SIZE, best=0, best_start=0;
+    read_lock();
+    for (uint64_t at=(uint64_t)low; at<end;) {
+        uint64_t next=end, resume=end;
+        for (int i=0;i<LIMIT;++i) if (blocks[i].used && blocks[i].start+blocks[i].size>at && blocks[i].start<next) {
+            next=blocks[i].start>at ? blocks[i].start : at; resume=blocks[i].start+blocks[i].size;
+        }
+        uint64_t start=align_up(at,alignment);
+        if (next>start && next-start>best) { best=next-start; best_start=start; }
+        if (next==end) break;
+        at=resume>at ? resume : at+PAGE;
+    }
+    read_unlock();
+    if (!best) return NO_SPACE;
+    *out_start=(int64_t)best_start; *out_size=best;
+    return 0;
+}
+/* Memory pools: Expand adds direct memory to the pool, Reserve takes virtual space, Commit maps
+ * free pool pages into it (possibly as several physical runs), Decommit gives them back. */
+#define POOL_CHUNKS 64
+static struct { uint64_t phys, pages; unsigned char *used; } pool_chunks[POOL_CHUNKS];
+static ABI int32_t pool_expand(int64_t low, int64_t high, uint64_t size, uint64_t alignment, int64_t *out) {
+    if (!out || !size || size%(64*1024)) return INVALID;
+    int32_t r=direct_allocate(low,high,size,alignment ? alignment : 64*1024,0,out);
+    if (r) return r;
+    write_lock();
+    int slot=-1;
+    for (int i=0;i<POOL_CHUNKS;++i) if (!pool_chunks[i].pages) { slot=i; break; }
+    unsigned char *used=slot>=0 ? calloc(size/PAGE,1) : NULL;
+    if (used) pool_chunks[slot].phys=(uint64_t)*out, pool_chunks[slot].pages=size/PAGE, pool_chunks[slot].used=used;
+    write_unlock();
+    if (!used) return NO_MEMORY;
+    printf("Runtime: memory pool expanded by %" PRIu64 " bytes at 0x%" PRIx64 "\n",size,(uint64_t)*out);
+    return 0;
+}
+static ABI int32_t pool_reserve(void *address, uint64_t size, uint64_t alignment, int flags, void **out) {
+    if (!out) return INVALID;
+    *out=address;
+    return reserve_range(out,size,flags,alignment ? alignment : 64*1024);
+}
+/* Longest free run (at most want pages) in the pool; marks it used. */
+static int pool_take_locked(uint64_t want, uint64_t *phys, uint64_t *pages) {
+    for (int c=0;c<POOL_CHUNKS;++c) for (uint64_t p=0;p<pool_chunks[c].pages;) {
+        if (pool_chunks[c].used[p]) { ++p; continue; }
+        uint64_t n=0;
+        while (p+n<pool_chunks[c].pages && n<want && !pool_chunks[c].used[p+n]) ++n;
+        memset(pool_chunks[c].used+p,1,n);
+        *phys=pool_chunks[c].phys+p*PAGE; *pages=n;
+        return 1;
+    }
+    return 0;
+}
+static void pool_give_locked(uint64_t phys, uint64_t size) {
+    for (int c=0;c<POOL_CHUNKS;++c)
+        if (pool_chunks[c].pages && phys>=pool_chunks[c].phys && phys<pool_chunks[c].phys+pool_chunks[c].pages*PAGE) {
+            memset(pool_chunks[c].used+(phys-pool_chunks[c].phys)/PAGE,0,size/PAGE);
+            return;
+        }
+}
+static ABI int32_t pool_commit(void *address, uint64_t size, int type, int prot, int flags) {
+    (void)flags;
+    if (!address || (uintptr_t)address%PAGE || !size || size%PAGE) return INVALID;
+    /* One physical run per step; GPU notifications drain between steps (bounded queue). */
+    for (uint64_t done=0; done<size;) {
+        uint64_t phys, pages;
+        write_lock();
+        if (!pool_take_locked((size-done)/PAGE,&phys,&pages)) { write_unlock(); return NO_MEMORY; }
+        void *at=(char *)address+done;
+        int32_t r=place(&at,pages*PAGE,prot,MAP_FIXED_FLAG,PAGE,KIND_DIRECT,type,phys);
+        if (r) pool_give_locked(phys,pages*PAGE);
+        write_unlock();
+        flush_hooks();
+        if (r) return r;
+        done+=pages*PAGE;
+    }
+    return 0;
+}
+static ABI int32_t pool_decommit(void *address, uint64_t size, int flags) {
+    (void)flags;
+    uintptr_t start=(uintptr_t)address, end=start+size;
+    if (start%PAGE || !size || size%PAGE) return INVALID;
+    /* One mapped region per step, returned to the pool and left reserved. */
+    for (uintptr_t at=start; at<end;) {
+        write_lock();
+        size_t i=vma_index(at);
+        while (i<vma_count && vmas[i].end<=at) ++i;
+        if (i>=vma_count || vmas[i].start>=end) { write_unlock(); break; }
+        uintptr_t a=vmas[i].start>at ? vmas[i].start : at, b=vmas[i].end<end ? vmas[i].end : end;
+        int32_t r=0;
+        if (vmas[i].kind!=KIND_RESERVED) {
+            if (vmas[i].kind==KIND_DIRECT) pool_give_locked(vmas[i].phys+(a-vmas[i].start),b-a);
+            r=unmap_locked(a,b-a);
+            void *p=(void *)a;
+            if (!r) r=place(&p,b-a,0,MAP_FIXED_FLAG,PAGE,KIND_RESERVED,0,0);
+        }
+        write_unlock();
+        flush_hooks();
+        if (r) return r;
+        at=b;
+    }
+    return 0;
+}
 static const RuntimeExport exports[]={
     {"mmap",posix_mmap}, {"msync",posix_msync},
+    {"sceKernelAllocateMainDirectMemory",main_allocate}, {"sceKernelAvailableDirectMemorySize",direct_available},
+    {"sceKernelMemoryPoolExpand",pool_expand}, {"sceKernelMemoryPoolReserve",pool_reserve},
+    {"sceKernelMemoryPoolCommit",pool_commit}, {"sceKernelMemoryPoolDecommit",pool_decommit},
     {"sceKernelGetDirectMemorySize",direct_size}, {"sceKernelAllocateDirectMemory",direct_allocate},
     {"sceKernelMapDirectMemory",direct_map}, {"sceKernelMapNamedDirectMemory",direct_map_named},
     {"sceKernelReleaseDirectMemory",direct_release}, {"sceKernelMunmap",direct_unmap}, {"munmap",direct_unmap},

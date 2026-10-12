@@ -354,7 +354,12 @@ extern "C" int gow3gpu_choice_begin(const char* title, const char* const* items,
 }
 
 extern "C" int gow3gpu_choice_poll(void) {
+    Gow3Overlay::PollChoiceInput(); // the game polls the dialog; the list reads the pad here too
     return Gow3Overlay::PollChoice();
+}
+
+extern "C" void gow3gpu_choice_set_input(uint32_t (*buttons)(void)) {
+    Gow3Overlay::SetChoiceInput(buttons);
 }
 
 extern "C" int gow3gpu_text_input_poll(char* out, uint64_t size) {

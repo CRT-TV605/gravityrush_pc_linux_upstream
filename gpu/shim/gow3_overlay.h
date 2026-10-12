@@ -36,11 +36,19 @@ void SetBackgroundLoading(u32 done, u32 total);
 /// Whether anything is drawn this frame (menu open or FPS counter on).
 bool Visible();
 
+/// Counts a presented frame for GOW3_FPS_LOG.
+void LogPresent();
+
 /// Present thread: draws into `view` (layout ColorAttachmentOptimal).
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent);
 
 /// The menu is open or a text entry is shown: the game's input is held neutral.
 bool CapturesInput();
+
+/// The runtime's buttons (PS4 bits) that move and confirm the save list, polled every frame.
+void SetChoiceInput(uint32_t (*buttons)());
+/// Reads the save list's buttons now (also done every presented frame).
+void PollChoiceInput();
 
 /// Window thread: the game's text dialog (sceImeDialog). Shown as a box on screen until
 /// `active` is false; typing goes to the window (sdl_window), the box only displays it.

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""God of War III (gow3) launcher for Windows (Tkinter; launcher/gow3_launcher.py is the Linux one).
+"""MediEvil (PS4, CUSA11227) launcher for Windows (Tkinter), on the gow3 port's runtime.
 
-Every setting of the port in one window: the game folder and saves, gow3.ini (upscaler,
-preset, output, effects), start-up options passed to run.py as environment variables
-(frame rate, presentation, HDR, ...), mods, third-party patches and the FSR 4 assets.
-Launcher options live in %APPDATA%/gow3-launcher/settings.json.
+Every setting of the port in one window: the game (a folder or the .pkg, unpacked once), saves,
+gow3.ini (display, frame rate, shaders, GPU data), start-up options passed to run.py as
+environment variables, mods, third-party patches and controls.
+Launcher options live in %APPDATA%/medievil-launcher/settings.json.
 
-Frozen with PyInstaller (packaging/windows/package.sh) the same God of War III.exe also runs the
-game without the window (`--play`), run.py (`--run`) and the preparation scripts (`--script`),
-so a packaged port needs no Python installation.
+Frozen with PyInstaller the same MediEvil.exe also runs the game without the window (`--play`),
+run.py (`--run`) and the preparation scripts (`--script`), so a packaged port needs no Python.
 """
 import ctypes
 import json
@@ -33,17 +32,18 @@ PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).r
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
 import save_backup  # noqa: E402  (scripts/)
 DATA_DIR = Path(os.environ.get('GOW3_DATA_DIR', PORT_DIR))
-CONFIG_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'gow3-launcher'
+CONFIG_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'medievil-launcher'
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
 MOD_PRESETS = DATA_DIR / 'mods_presets.json'
-APP_NAME = 'God of War III'
+APP_NAME = 'MediEvil'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-# This build; GitHub release tags are windows-v<VERSION>.
-VERSION = '2.1.3'
-RELEASES_API = 'https://api.github.com/repos/FelipePrado0/gow3_pc/releases/latest'
-RELEASES_PAGE = 'https://github.com/FelipePrado0/gow3_pc/releases/latest'
-UPDATE_DIR = Path(tempfile.gettempdir()) / 'gow3-update'
+# This build. The MediEvil port has no release feed: the God of War III one would install that
+# game's port over this one, so updates are off.
+VERSION = '1.0.0'
+RELEASES_API = None
+RELEASES_PAGE = 'https://github.com/FelipePrado0/gow3_pc'
+UPDATE_DIR = Path(tempfile.gettempdir()) / 'medievil-update'
 # Never copied over an installation by an update (the package does not hold them either).
 USER_FILES = ('user', 'out', 'mods', 'gow3.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
 
@@ -130,20 +130,21 @@ def windows_language():
 INI_FLAGS = {'cheat_double_jumps', 'cheat_very_hard', 'sharpen', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
              'stale_readback', 'fsr1', 'rcas'}
 # The graphics keys are also in the in-game menu (Insert / R3+L2); run.py reads the startup ones.
-INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
+INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
-                'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '1',
+                'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '0',
                 'render_resolution': 'native', 'engine_fps': '120', 'fsr1': '0', 'rcas': '1',
                 'rcas_strength': '75', 'frames_queued': '1', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
-APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'CUSA01623')), 'user_dir': '',
+APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'medieval' / 'CUSA11227')), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '',
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False,
-                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation'}
+                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
+                'last_pkg': ''}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and are not remapped on the gamepad.
@@ -324,6 +325,7 @@ def game_environment(s):
     for kind, name in (('key', 'GOW3_KEY_MAP'), ('pad', 'GOW3_PAD_MAP')):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
+    env.setdefault('GOW3_FPS_LOG', '1')  # FPS and worst frame every 5 s in the log (diagnostics)
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -332,11 +334,11 @@ def game_environment(s):
 # ---------------------------------------------------------------------------------------------
 # The window.
 
-# God of War III's own colors: near black, ash and blood red (no gold or orange).
-BG, PANEL, CARD, LINE = '#0d0b0b', '#161212', '#1d1717', '#2a2222'
-TEXT, MUTED, ACCENT, ACCENT_HI = '#e6e0d8', '#8a817a', '#a4161a', '#c81e25'
-RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('480p', ('480p',)), ('720p', ('720p',)),
-                      ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K',))]
+# MediEvil's colors: graveyard night purple, bone white and the ghostly green of its HUD.
+BG, PANEL, CARD, LINE = '#0b0a10', '#13111a', '#1b1824', '#2a2536'
+TEXT, MUTED, ACCENT, ACCENT_HI = '#ebe4d0', '#8d8799', '#3f7d1c', '#76c43a'
+RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('720p', ('720p (faster)',)),
+                      ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',))]
 ENGINE_FPS_CHOICES = [('60', ('60 (original)',)), ('120', ('120',)), ('240', ('240',))]
 
 
@@ -357,7 +359,7 @@ class Launcher:
         if sys.platform == 'win32':
             try:  # the taskbar shows this window's icon, not Python's
                 import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('gow3pc.launcher')
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('medievilpc.launcher')
             except (AttributeError, OSError):
                 pass
         root.configure(bg=BG)
@@ -370,8 +372,6 @@ class Launcher:
         self.show('home')
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.after(100, self.drain_output)
-        if self.app.get('check_updates', True):
-            threading.Thread(target=self.check_update, daemon=True).start()
 
     def px(self, size):
         return int(size * self.dpi)
@@ -388,7 +388,7 @@ class Launcher:
             return
         except (ImportError, OSError, self.tk.TclError):
             pass
-        for icon in (game_icon, PORT_DIR / 'launcher' / 'gow3.png'):
+        for icon in (game_icon, PORT_DIR / 'launcher' / 'medievil.png'):
             try:
                 self.icon = self.tk.PhotoImage(file=str(icon))
                 if self.icon.width() > 128:
@@ -407,7 +407,7 @@ class Launcher:
         for checked in (False, True):
             image = tk.PhotoImage(width=n + self.px(8), height=n)  # unset pixels stay transparent
             fill = ACCENT if checked else CARD
-            image.put(ACCENT_HI if checked else '#4a4040', to=(0, 0, n, n))
+            image.put(ACCENT_HI if checked else '#453f52', to=(0, 0, n, n))
             image.put(fill, to=(1, 1, n - 1, n - 1))
             if checked:
                 # Tick: down from (0.22n, 0.52n) to (0.42n, 0.72n), up to (0.78n, 0.30n).
@@ -449,7 +449,7 @@ class Launcher:
         s.map('TCheckbutton', background=[('active', PANEL)], foreground=[('disabled', MUTED)])
         s.configure('TRadiobutton', background=PANEL, foreground=TEXT, indicatorcolor=CARD)
         s.map('TRadiobutton', background=[('active', PANEL)], indicatorcolor=[('selected', ACCENT)])
-        s.configure('Warning.TLabel', background='#2a1414', foreground='#e0a0a0', padding=(10, 6))
+        s.configure('Warning.TLabel', background='#1e2614', foreground='#c8e0a0', padding=(10, 6))
         s.configure('TCombobox', arrowcolor=MUTED, foreground=TEXT, padding=4)
         s.map('TCombobox', fieldbackground=[('readonly', CARD)], foreground=[('readonly', TEXT)],
               selectbackground=[('readonly', CARD)], selectforeground=[('readonly', TEXT)])
@@ -459,7 +459,7 @@ class Launcher:
         s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
         s.configure('Play.TButton', background=ACCENT, foreground='#f4ece0', font=('Georgia', 15, 'bold'),
                     padding=(36, 10), borderwidth=0)
-        s.map('Play.TButton', background=[('active', ACCENT_HI), ('disabled', '#2e1c1c')],
+        s.map('Play.TButton', background=[('active', ACCENT_HI), ('disabled', '#1f2a1a')],
               foreground=[('disabled', '#8a7a78')])
         s.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=CARD, bordercolor=LINE)
         s.configure('Vertical.TScrollbar', background=CARD, arrowcolor=MUTED, troughcolor=PANEL, bordercolor=PANEL)
@@ -596,7 +596,7 @@ class Launcher:
                             pady=10, cursor='hand2')
             item.pack(fill='x')
             item.bind('<Button-1>', lambda _e, n=name: self.show(n))
-            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg='#1a1414'))
+            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg='#18151f'))
             item.bind('<Leave>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg=BG))
             self.nav[name] = item
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
@@ -661,20 +661,25 @@ class Launcher:
         self.banner = tk.Canvas(page, height=self.px(330), bg=BG, highlightthickness=0, bd=0)
         self.banner.pack(fill='x')
         self.banner.bind('<Configure>', lambda _e: self.draw_banner())
-        self.banner_button = ttk.Button(self.banner, text=_('Choose the game folder'),
+        self.banner_button = ttk.Button(self.banner, text=_('Choose the game or its .pkg'),
                                         command=lambda: self.show('game'))
         quick = ttk.Frame(page, padding=(28, 14, 28, 8))
         quick.pack(fill='x')
         ttk.Label(quick, text=_('Quick settings', 'Основное').upper(), style='Section.TLabel').grid(
             row=0, column=0, columnspan=4, sticky='w')
         tk.Frame(quick, bg=LINE, height=1).grid(row=1, column=0, columnspan=4, sticky='we', pady=(2, 6))
-        items = ((_('Display mode'), 'display_mode', DISPLAY_MODES), (_('Frame rate limit'), 'fps_limit', FPS_LIMITS),
-                 (_('Render resolution'), 'render_resolution', RESOLUTION_CHOICES),
-                 (_('Engine frame rate'), 'engine_fps', ENGINE_FPS_CHOICES))
-        for index, (title, key, options) in enumerate(items):
+        items = ((_('Display mode'), 'display_mode', 'ini', DISPLAY_MODES),
+                 (_('Frame rate limit'), 'fps_limit', 'ini', FPS_LIMITS),
+                 (_('Render resolution'), 'render_resolution', 'ini', RESOLUTION_CHOICES),
+                 (_('Game language', 'Язык игры'), 'language', 'app', LANGUAGES))
+        for index, (title, key, store, options) in enumerate(items):
             r, c = 2 + index // 2, (index % 2) * 2
             ttk.Label(quick, text=title).grid(row=r, column=c, sticky='w', pady=6, padx=(0, 12))
-            self.choice(quick, key, 'ini', options, width=18).grid(row=r, column=c + 1, sticky='w', padx=(0, 40))
+            self.choice(quick, key, store, options, width=18).grid(row=r, column=c + 1, sticky='w', padx=(0, 40))
+        flags = ttk.Frame(quick)
+        flags.grid(row=4, column=0, columnspan=4, sticky='w', pady=(6, 0))
+        for key, title in (('vsync', _('VSync')), ('show_fps', _('Show performance overlay'))):
+            ttk.Checkbutton(flags, text=title, variable=self.var(key, 'ini')).pack(side='left', padx=(0, 28))
 
     def draw_banner(self):
         """The cover art of the selected dump (sce_sys/pic1.png) under the title."""
@@ -805,14 +810,14 @@ class Launcher:
         f = self.scrolled_page('performance', _('Performance'), _('Frame rate and speed options.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
         self.row(f, _('Frame rate limit'), self.choice(f, 'fps_limit', 'ini', FPS_LIMITS),
-                 _('The engine frame rate (below) is the highest it can go.'))
+                 _('MediEvil itself runs at up to 60 FPS; a lower limit saves power.'))
         self.row(f, _('Frames queued'), self.choice(f, 'frames_queued', 'ini', FRAMES_QUEUED),
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
-        self.row(f, _('Engine frame rate'), self.choice(f, 'engine_fps', 'ini', ENGINE_FPS_CHOICES),
-                 _('The highest frame rate the game itself runs at (a game patch).'), restart=True)
+        self.section(f, _('Resolution'))
         self.row(f, _('Render resolution'), self.choice(f, 'render_resolution', 'ini', RESOLUTION_CHOICES),
-                 _('The size the game draws at; higher is sharper and slower. A resolution patch replaces the '
-                   'texture fix and reserves the memory it needs.'), restart=True)
+                 _('The resolution the 3D scene is drawn at. 4K renders 3840 × 2160 and scales it to the game\'s '
+                   '1080p picture: much sharper edges and detail, needs a fast graphics card. Applied at start '
+                   '(the in-game menu restarts the game for it).'), restart=True)
         self.section(f, _('Shaders'))
         self.check(f, 'pipeline_binary_cache', 'app', _('Use pipeline binary cache (A/B test)'),
                    _('Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. '
@@ -838,20 +843,14 @@ class Launcher:
                    'Насколько точно данные, записанные GPU, возвращаются игре.'))
 
     def build_game(self):
-        f = self.scrolled_page('game', _('Game', 'Игра'), _('Your game dump, saves and language.'))
-        self.section(f, _('Cheats'), top=4)
-        self.check(f, 'cheat_double_jumps', 'ini', _('Infinite Double Jumps'),
-                   _('Repeat air jumps without landing. Also available in the in-game Cheats menu.'))
-        self.check(f, 'cheat_very_hard', 'ini', _('Unlock Very Hard'),
-                   _('Select Very Hard without completing the game. Does not change existing save difficulty. '
-                     'In-game: enable before opening New Game.'))
+        f = self.scrolled_page('game', _('Game', 'Игра'), _('Your game (folder or .pkg), saves and language.'))
+        self.section(f, _('Install from PKG'), top=4)
+        self.build_pkg_install(f)
         self.section(f, _('Folders'))
         self.folder(f, 'game_dir', _('Game folder', 'Папка игры'),
                     _('Choose the folder with eboot.bin', 'Выберите папку с eboot.bin'),
-                    _('Your own dump of the game (eboot.bin, sce_module, sce_sys); God of War III Remastered: '
-                      'CUSA01623, version 01.02 for the community patches.',
-                      'Ваш дамп игры (eboot.bin, sce_module, sce_sys); God of War III Remastered: CUSA01623, '
-                      'версия 01.02 для патчей сообщества.'), on_change=self.game_changed)
+                    _('Your own copy of MediEvil (CUSA11227): the folder with eboot.bin, sce_module and sce_sys. '
+                      'Installing a .pkg (above) fills this in.'), on_change=self.game_changed)
         self.folder(f, 'user_dir', _('Saves folder', 'Папка сохранений'),
                     _('Choose the saves folder', 'Выберите папку сохранений'),
                     _('Empty: {} (shader caches are kept there too).',
@@ -863,6 +862,82 @@ class Launcher:
 
     def user_dir(self):
         return Path(self.var('user_dir', 'app').get() or DATA_DIR / 'user')
+
+    def build_pkg_install(self, f):
+        """A fake PKG (fPKG) is unpacked once into <its folder>/<TITLE_ID>; that becomes the game folder."""
+        ttk = self.ttk
+        holder = ttk.Frame(f)
+        self.pkg_button = ttk.Button(holder, text=_('Choose .pkg…'), command=self.choose_pkg)
+        self.pkg_button.pack(side='left')
+        self.pkg_progress = ttk.Progressbar(holder, length=self.px(260), maximum=1000)
+        self.pkg_progress.pack(side='left', padx=12)
+        self.row(f, _('Game package'), holder,
+                 _('Unpacks the game once (about 32 GB for MediEvil) next to the .pkg, then plays from that folder. '
+                   'Fake PKGs only; an interrupted unpack continues where it stopped.'))
+        self.pkg_label = ttk.Label(f, text='', style='Muted.TLabel', wraplength=self.px(640), justify='left')
+        self.pkg_label.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w')
+        self.pkg_busy = False
+
+    def choose_pkg(self):
+        if self.pkg_busy:
+            return
+        last = self.app.get('last_pkg') or ''
+        chosen = self.filedialog.askopenfilename(
+            title=_('Choose the game .pkg'), filetypes=[('PS4 package', '*.pkg'), ('All files', '*.*')],
+            initialdir=str(Path(last).parent) if last else str(PORT_DIR.parent))
+        if chosen:
+            self.install_pkg(Path(chosen))
+
+    def install_pkg(self, pkg):
+        import pkg_extract
+        try:
+            target = Path(pkg_extract.default_target(pkg))
+        except (OSError, ValueError) as error:
+            self.messagebox.showerror(APP_NAME, _('This is not a PKG that can be unpacked: {}').format(error))
+            return
+        self.app['last_pkg'] = str(pkg)
+        if pkg_extract.is_extracted(pkg, target):
+            self.var('game_dir', 'app').set(str(target))
+            self.pkg_progress.configure(value=1000)
+            self.pkg_label.configure(text=_('Already unpacked in {}.').format(target))
+            return
+        free = shutil.disk_usage(target.parent).free
+        if not self.messagebox.askyesno(APP_NAME, _(
+                'Unpack {} into {}?\n\nFree space on that drive: {} GB. MediEvil needs about 32 GB.').format(
+                    pkg.name, target, free >> 30)):
+            return
+        self.pkg_busy = True
+        self.pkg_button.configure(state='disabled')
+        self.play_button.configure(state='disabled')
+        self.pkg_label.configure(text=_('Reading {}…').format(pkg.name))
+
+        def report(done, total, rate):
+            def show():
+                self.pkg_progress.configure(value=done * 1000 // max(total, 1))
+                self.pkg_label.configure(text=_('Unpacking: {:.1f} of {:.1f} GB ({:.0f} MB/s)').format(
+                    done / 2**30, total / 2**30, rate))
+            self.ui_calls.put(show)
+
+        def work():
+            error = None
+            try:
+                pkg_extract.extract(pkg, target, report)
+            except (OSError, ValueError) as failure:
+                error = failure
+
+            def done():
+                self.pkg_busy = False
+                self.pkg_button.configure(state='normal')
+                if error:
+                    self.pkg_label.configure(text=_('Unpacking stopped: {}. Choose the .pkg again to continue.').format(error))
+                    self.messagebox.showerror(APP_NAME, _('Could not unpack: {}').format(error))
+                else:
+                    self.pkg_progress.configure(value=1000)
+                    self.pkg_label.configure(text=_('Installed in {}.').format(target))
+                    self.var('game_dir', 'app').set(str(target))
+                self.refresh_status()
+            self.ui_calls.put(done)
+        threading.Thread(target=work, daemon=True).start()
 
     def build_save_backups(self, f):
         """run.py backs the saves up before every start; one of them can be restored here."""
@@ -1062,14 +1137,9 @@ class Launcher:
         self.row(f, _('Launcher language', 'Язык лаунчера'), self.choice(f, 'ui_language', 'app', UI_LANGUAGES),
                  _('Applies when the launcher opens again.', 'Применится при следующем открытии лаунчера.'))
         self.check(f, 'close_on_play', 'app', _('Close the launcher when the game starts', 'Закрывать лаунчер при запуске игры'))
-        self.check(f, 'check_updates', 'app', _('Check for updates when the launcher opens',
-                                                'Проверять обновления при открытии лаунчера'))
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
-        ttk.Button(holder, text=_('Check for updates', 'Проверить обновления'),
-                   command=lambda: threading.Thread(target=self.check_update, args=(True,), daemon=True).start()
-                   ).pack(side='left')
-        ttk.Button(holder, text=_('Desktop shortcut', 'Ярлык на рабочем столе'), command=self.shortcut).pack(side='left', padx=6)
+        ttk.Button(holder, text=_('Desktop shortcut', 'Ярлык на рабочем столе'), command=self.shortcut).pack(side='left')
         ttk.Label(holder, text=f'v{VERSION}', style='Muted.TLabel').pack(side='left', padx=10)
         self.section(f, _('Files'))
         holder = ttk.Frame(f)
@@ -1118,7 +1188,7 @@ class Launcher:
         ttk.Label(top, text=_('Log', 'Журнал').upper(), font=('Georgia', 20)).pack(side='left')
         ttk.Button(top, text=_('Copy', 'Копировать'), command=self.copy_log).pack(side='right')
         ttk.Button(top, text=_('Clear', 'Очистить'), command=lambda: self.set_log('')).pack(side='right', padx=6)
-        self.log = tk.Text(page, wrap='none', bg='#0a0808', fg='#cfc6bc', insertbackground=TEXT, relief='flat',
+        self.log = tk.Text(page, wrap='none', bg='#08070c', fg='#cfd6c4', insertbackground=TEXT, relief='flat',
                            font=('Consolas', 9), padx=8, pady=6, state='disabled', highlightthickness=0)
         bar = ttk.Scrollbar(page, command=self.log.yview)
         self.log.configure(yscrollcommand=bar.set)
@@ -1148,10 +1218,12 @@ class Launcher:
 
     def summary(self):
         self.store_game_patches()
-        title_id, _profile = game_profile_of(self.var('game_dir', 'app').get())
-        names = self.app.get('game_patches', {}).get(title_id) or []
+        mode = dict((v, t[0]) for v, t in DISPLAY_MODES).get(self.var('display_mode', 'ini').get(), '?')
+        limit = self.var('fps_limit', 'ini').get()
         resolution = dict((v, t[0]) for v, t in RESOLUTION_CHOICES).get(self.var('render_resolution', 'ini').get(), '?')
-        return _('{} · {} FPS engine · {} patches').format(resolution, self.var('engine_fps', 'ini').get(), len(names))
+        return _('{} · {} · {} · VSync {}').format(
+            _(mode), _(resolution), _('up to 60 FPS') if limit in ('0', '60', '120', '240') else _('{} FPS').format(limit),
+            _('on') if self.var('vsync', 'ini').get() else _('off'))
 
     def refresh_fsr4(self):
         total, missing = len(fsr4_files()), len(fsr4_missing())
@@ -1338,8 +1410,7 @@ class Launcher:
             return
         self.collect()
         if not game_info(self.app['game_dir']):
-            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA01623).',
-                                                  'Выберите папку игры с eboot.bin (CUSA01623).'))
+            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA11227), or install the .pkg.'))
             self.show('game')
             return
         self.set_log('')
@@ -1360,9 +1431,23 @@ class Launcher:
             self.root.after(5000, self.root.destroy)  # the game keeps running
 
     def read_output(self, process):
+        """The game's output for the Log page, also kept in <saves folder>/last_run.log."""
+        log = None
+        try:
+            self.user_dir().mkdir(parents=True, exist_ok=True)
+            log = open(self.user_dir() / 'last_run.log', 'w', encoding='utf-8', buffering=1)
+        except OSError:
+            pass
         for raw in iter(process.stdout.readline, b''):
-            self.output.put(raw.decode('utf-8', errors='replace'))
-        self.output.put((process.wait(),))
+            text = raw.decode('utf-8', errors='replace')
+            if log:
+                log.write(text)
+            self.output.put(text)
+        code = process.wait()
+        if log:
+            log.write(f'\nThe game exited (code {code}).\n')
+            log.close()
+        self.output.put((code,))
 
     def drain_output(self):
         while not self.ui_calls.empty():
@@ -1522,15 +1607,15 @@ class Launcher:
                                                  'минут будет подтормаживать, пока кэш собирается заново.'))
 
     def shortcut(self):
-        """God of War III.lnk on the desktop."""
+        """MediEvil.lnk on the desktop."""
         if FROZEN:
             target, arguments, icon = sys.executable, '', f'{sys.executable},0'
         else:  # a source tree: the launcher script with the windowless Python
             pythonw = Path(sys.executable).with_name('pythonw.exe')
             target = str(pythonw if pythonw.exists() else sys.executable)
-            arguments, icon = Path(__file__).resolve(), PORT_DIR / 'launcher' / 'gow3.ico'
+            arguments, icon = Path(__file__).resolve(), PORT_DIR / 'launcher' / 'medievil.ico'
         script = ('$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath("Desktop")'
-                  '+"\\God of War III.lnk");'
+                  '+"\\MediEvil.lnk");'
                   f'$s.TargetPath="{target}";$s.WorkingDirectory="{PORT_DIR}";$s.IconLocation="{icon}";'
                   + (f"$s.Arguments='\"{arguments}\"';" if arguments else '') + '$s.Save()')
         result = subprocess.run(['powershell', '-NoProfile', '-Command', script], capture_output=True,

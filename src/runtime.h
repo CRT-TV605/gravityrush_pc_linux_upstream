@@ -100,4 +100,9 @@ void runtime_savedata_report(void);
 int runtime_savedata_param(int32_t user, const char *dir, void *param);
 int runtime_savedata_icon(int32_t user, const char *dir, char *out, size_t size);
 void runtime_thread_attach_host(const char *name);
+/* Name of a guest thread handle, or NULL when it is not a live thread. */
+const char *runtime_thread_name(void *handle);
+uint64_t runtime_memory_flexible_available(void);
+uintptr_t runtime_extra_resolve(const char *name);
+void runtime_extra_report(void);
 #endif

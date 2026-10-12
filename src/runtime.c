@@ -80,6 +80,7 @@ void runtime_report(void) {
     runtime_ajm_report();
     runtime_audio_report();
     runtime_pad_report();
+    runtime_extra_report();
     runtime_savedata_report();
     runtime_file_report();
     printf("Runtime: memory operations=%zu\n", (size_t)memory_calls);
@@ -250,6 +251,8 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (save) return save;
     uintptr_t file = runtime_file_resolve(name);
     if (file) return file;
+    uintptr_t extra = runtime_extra_resolve(name);
+    if (extra) return extra;
     return gow3gpu_resolve(name);
 }
 static const struct { const char *nid, *symbol; } import_names[]={

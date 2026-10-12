@@ -293,8 +293,21 @@ std::string OverlayText() {
 
 constexpr const char* Unsupported = "Unavailable: game version or code signature mismatch.";
 
+// The cheats, multipliers and game patches hook God of War III's code (CUSA01623 only).
+bool IsGow3() {
+    return Common::ElfInfo::Instance().GameSerial().starts_with("CUSA01623");
+}
+
 void GameTab() {
     auto& s = Gow3Settings::Get();
+    if (!IsGow3()) {
+        ImGui::SeparatorText("Game");
+        ImGui::TextWrapped("%s runs without code patches. The cheats and multipliers of this menu are "
+                           "written for God of War III and stay hidden here; image, performance and "
+                           "overlay options work in every game.",
+                           std::string(Common::ElfInfo::Instance().Title()).c_str());
+        return;
+    }
     ImGui::SeparatorText("Cheats");
     if (BeginRows("##cheats")) {
         static const char* const names[] = {"Infinite health", "Infinite magic", "Infinite item meter",
@@ -410,7 +423,7 @@ void PerformanceTab() {
         ChoiceRow("Frame rate limit", s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
                   "Caps the frame rate. The engine frame rate (below) is the highest it can go.");
         const int effective = G::EffectiveFps(s.fps_limit, s.startup_engine_fps);
-        if (s.fps_limit == 0 || effective < s.fps_limit) {
+        if (IsGow3() && (s.fps_limit == 0 || effective < s.fps_limit)) {
             char text[48];
             std::snprintf(text, sizeof(text), "%d FPS (engine frame rate)", effective);
             InfoRow("Effective limit", text);
@@ -424,12 +437,17 @@ void PerformanceTab() {
     }
     ImGui::SeparatorText("Applied on restart");
     if (BeginRows("##restart")) {
+        // God of War III: a resolution patch. Unreal Engine 4 games (MediEvil): the scene scale.
         static const char* const resolution_labels[] = {"Native (1080p)", "480p", "720p", "1440p", "1800p", "4K"};
-        ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr, int(G::Resolutions.size()),
-                  "The resolution the game draws at. Higher is sharper and slower.");
-        static const char* const engine_labels[] = {"60 (original)", "120", "240"};
-        ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(), int(G::EngineFps.size()),
-                  "The highest frame rate the game itself runs at.");
+        ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr,
+                  int(G::Resolutions.size()),
+                  IsGow3() ? "The resolution the game draws at. Higher is sharper and slower."
+                           : "The resolution the 3D scene is drawn at, shown at 1080p: 4K is the sharpest.");
+        if (IsGow3()) { // the engine frame rate is a God of War III patch
+            static const char* const engine_labels[] = {"60 (original)", "120", "240"};
+            ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(),
+                      int(G::EngineFps.size()), "The highest frame rate the game itself runs at.");
+        }
         CheckRow("Game reads GPU data without waiting", s.stale_readback,
                  "Big FPS gain. Switch it off if lighting or objects look wrong.");
         CheckRow("Deferred GPU readbacks", s.deferred_readback,
@@ -921,20 +939,10 @@ void UpdateChoiceTextures() {
 
 // The save list takes the keys and buttons that move and confirm; the rest stays with the game
 // (held neutral by CapturesInput).
-bool HandleChoiceEvent(const SDL_Event& event) {
-    int move = 0, finish = 0; // finish: 1 accept, 2 cancel
-    if (event.type == SDL_EVENT_KEY_DOWN) {
-        const SDL_Keycode key = event.key.key;
-        move = key == SDLK_UP || key == SDLK_W ? -1 : key == SDLK_DOWN || key == SDLK_S ? 1 : 0;
-        finish = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE ? 1
-                 : key == SDLK_ESCAPE || key == SDLK_BACKSPACE                   ? 2
-                                                                                 : 0;
-    } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-        const u8 button = event.gbutton.button;
-        move = button == SDL_GAMEPAD_BUTTON_DPAD_UP ? -1 : button == SDL_GAMEPAD_BUTTON_DPAD_DOWN ? 1 : 0;
-        finish = button == SDL_GAMEPAD_BUTTON_SOUTH ? 1 : button == SDL_GAMEPAD_BUTTON_EAST ? 2 : 0;
-    } else {
-        return event.type == SDL_EVENT_KEY_UP || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP;
+// Moves or closes the list (lock held). finish: 1 accept, 2 cancel.
+void ChoiceStep(int move, int finish) {
+    if (!choice_active) {
+        return;
     }
     const int count = int(choice_items.size());
     if (move && count) {
@@ -945,7 +953,74 @@ bool HandleChoiceEvent(const SDL_Event& event) {
         choice_active = false;
         RetireChoiceTextures();
     }
+}
+
+// The runtime's buttons for the list (gamepad and keyboard as mapped, scripted input, the left
+// stick as up/down), polled every frame: the game may stop reading the pad during the dialog and
+// raw window events depend on focus. Holding up or down repeats.
+uint32_t (*choice_input)() = nullptr;
+
+void PollChoiceInput() {
+    static std::mutex poll_mutex; // the present thread and the game thread both poll
+    std::scoped_lock poll_lock{poll_mutex};
+    static uint32_t previous = 0;
+    static bool open = false;
+    static std::chrono::steady_clock::time_point repeat_at{};
+    if (!choice_input) {
+        return;
+    }
+    if (!choice_active) {
+        open = false;
+        return;
+    }
+    const uint32_t buttons = choice_input();
+    const auto now = std::chrono::steady_clock::now();
+    if (!open) { // buttons held when the list opened (the press that opened it) wait for release
+        open = true;
+        previous = buttons;
+        return;
+    }
+    constexpr uint32_t Up = 0x10, Down = 0x40, Circle = 0x2000, Cross = 0x4000;
+    const uint32_t pressed = buttons & ~previous;
+    previous = buttons;
+    int move = (pressed & Up) ? -1 : (pressed & Down) ? 1 : 0;
+    if (move) {
+        repeat_at = now + std::chrono::milliseconds(400);
+    } else if ((buttons & (Up | Down)) && now >= repeat_at) {
+        move = (buttons & Up) ? -1 : 1;
+        repeat_at = now + std::chrono::milliseconds(120);
+    }
+    const int finish = (pressed & Cross) ? 1 : (pressed & Circle) ? 2 : 0;
+    if (move || finish) {
+        std::scoped_lock lock{imgui_mutex};
+        ChoiceStep(move, finish);
+    }
+}
+
+bool HandleChoiceEvent(const SDL_Event& event) {
+    int move = 0, finish = 0; // finish: 1 accept, 2 cancel
+    if (event.type == SDL_EVENT_KEY_DOWN) {
+        const SDL_Keycode key = event.key.key;
+        move = key == SDLK_UP || key == SDLK_W ? -1 : key == SDLK_DOWN || key == SDLK_S ? 1 : 0;
+        finish = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE ? 1
+                 : key == SDLK_ESCAPE || key == SDLK_BACKSPACE                   ? 2
+                                                                                 : 0;
+    } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        if (choice_input) {
+            return true; // PollChoiceInput reads the gamepad
+        }
+        const u8 button = event.gbutton.button;
+        move = button == SDL_GAMEPAD_BUTTON_DPAD_UP ? -1 : button == SDL_GAMEPAD_BUTTON_DPAD_DOWN ? 1 : 0;
+        finish = button == SDL_GAMEPAD_BUTTON_SOUTH ? 1 : button == SDL_GAMEPAD_BUTTON_EAST ? 2 : 0;
+    } else {
+        return event.type == SDL_EVENT_KEY_UP || event.type == SDL_EVENT_GAMEPAD_BUTTON_UP;
+    }
+    ChoiceStep(move, finish);
     return true;
+}
+
+void SetChoiceInput(uint32_t (*buttons)()) {
+    choice_input = buttons;
 }
 
 bool HandleEvent(const SDL_Event& event) {
@@ -1119,6 +1194,29 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
     text_entry_text = text;
 }
 
+// GOW3_FPS_LOG=1: presented frames per second and the worst frame, every 5 s (benchmarks).
+void LogPresent() {
+    static const bool fps_log = std::getenv("GOW3_FPS_LOG") != nullptr;
+    if (!fps_log) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    static auto window_start = now, previous = now;
+    static unsigned frames = 0;
+    static float worst = 0.0f;
+    ++frames;
+    worst = std::max(worst, std::chrono::duration<float, std::milli>(now - previous).count());
+    previous = now;
+    const float elapsed = std::chrono::duration<float>(now - window_start).count();
+    if (elapsed >= 5.0f) {
+        std::printf("Perf: %.1f FPS, worst frame %.1f ms\n", frames / elapsed, worst);
+        std::fflush(stdout);
+        window_start = now;
+        frames = 0;
+        worst = 0.0f;
+    }
+}
+
 void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     // Present interval for the FPS readout (measured also while nothing is drawn).
     const auto now = std::chrono::steady_clock::now();
@@ -1128,6 +1226,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         frame_ms_avg = frame_ms_avg == 0.0f ? ms : frame_ms_avg * 0.95f + ms * 0.05f;
     }
     ConfirmRestart();
+    PollChoiceInput();
     if (!Visible()) {
         return;
     }

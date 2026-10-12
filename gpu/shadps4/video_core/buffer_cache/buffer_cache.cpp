@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <chrono>
 #include <array>
 #include <map>
@@ -624,8 +625,20 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
             static constexpr u32 ZmaskUncompressed = 0xf;
             runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
             return true;
+        } else if (*type == TextureCache::MetaType::CMask) {
+            // gow3: color images are always fully expanded on the host, so every 4-bit CMask
+            // tile code reads as 0xF (uncompressed: the color in memory is valid). MediEvil reads
+            // CMask through buffers; leaving it stale made it treat tiles as fast-cleared.
+            runtime.FillBuffer(arena, arena->Offset(device_addr), size, 0xFFFFFFFFu);
+            return true;
         } else {
-            LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
+            // Once per type: MediEvil reads CMask through buffers every frame.
+            static std::atomic<u32> warned{0};
+            const u32 bit = 1u << static_cast<u32>(*type);
+            if (!(warned.fetch_or(bit) & bit)) {
+                LOG_WARNING(Render_Vulkan, "Unhandled metadata type {} (reported once)",
+                            magic_enum::enum_name(*type));
+            }
         }
     }
     // gow3: most texel buffers alias no image; remember misses until images change.

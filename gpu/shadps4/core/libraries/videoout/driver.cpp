@@ -17,6 +17,7 @@
 #include "common/assert.h"
 #include "gow3_toggles.h"
 #include "gow3_settings.h"
+#include "gow3_overlay.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -72,6 +73,11 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
     main_port.resolution.full_height = height;
     main_port.resolution.pane_width = width;
     main_port.resolution.pane_height = height;
+    // A 120 Hz+ vblank is reported as a 119.88 Hz display: engines that pace to the display's
+    // refresh (Unreal Engine 4 on PS4) then run up to 120 FPS.
+    if (EmulatorSettings.GetVblankFrequency() >= 120) {
+        main_port.resolution.refresh_rate = SCE_VIDEO_OUT_REFRESH_RATE_119_88HZ;
+    }
     const char* separate = std::getenv("GOW3_PRESENT_THREAD");
     separate_swap = !(separate && separate[0] == '0');
     if (separate_swap) {
@@ -710,7 +716,13 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 next_flip = std::max(next_flip + frame_period, now - frame_period);
             }
             if (!request) {
-                if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
+                // gow3: the save list / menu / text entry stay live while the game draws nothing.
+                static auto last_redraw = std::chrono::steady_clock::now();
+                if (main_port.is_open && Gow3Overlay::CapturesInput() &&
+                    now - last_redraw >= std::chrono::milliseconds(16)) {
+                    last_redraw = now;
+                    DrawLastFrame();
+                } else if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
                     if (!main_port.is_open) {
                         DrawBlankFrame();
                     } else if (ImGui::Core::MustKeepDrawing()) {

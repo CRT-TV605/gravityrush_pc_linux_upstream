@@ -152,6 +152,10 @@ static ThreadAttr *find_attr(ThreadAttr **slot) {
 }
 
 static ABI void *thread_self(void) { return runtime_thread_current(); }
+const char *runtime_thread_name(void *handle) {
+    GuestThread *t=find_thread(handle);
+    return t ? t->name : NULL;
+}
 static ABI int32_t *guest_error(void) { return &guest_errno; }
 int32_t *runtime_errno(void) { return &guest_errno; }
 
@@ -191,6 +195,20 @@ static ABI int32_t attr_set_stack(ThreadAttr **slot,uint64_t size) {
 static ABI int32_t attr_get_stack(ThreadAttr **slot,uint64_t *size) {
     ThreadAttr *a=find_attr(slot);
     if (!a || !size) return ERR(22);
+    *size=a->stack; return 0;
+}
+/* scePthreadAttrGetstack: the host allocates guest stacks, so the address is the calling
+ * thread's own stack base (callers query the attributes of the thread they run on). */
+static ABI int32_t attr_get_stack_full(ThreadAttr **slot,void **address,uint64_t *size) {
+    ThreadAttr *a=find_attr(slot);
+    if (!a || !address || !size) return ERR(22);
+#ifdef _WIN32
+    ULONG_PTR low=0,high=0;
+    GetCurrentThreadStackLimits(&low,&high);
+    *address=(void *)low;
+#else
+    *address=NULL;
+#endif
     *size=a->stack; return 0;
 }
 static ABI int32_t attr_set_detach(ThreadAttr **slot,int state) {
@@ -373,6 +391,7 @@ uintptr_t runtime_thread_resolve(const char *name) {
         {"4+h9EzwKF4I#libkernel",attr_set_policy}, {"DzES9hQF4f4#libkernel",attr_set_param},
         {"3qxgM4ezETA#libkernel",attr_set_affinity}, {"eXbUSpEaTsA#libkernel",attr_set_inherit},
         {"JaRMy+QcpeU#libkernel",attr_get_detach}, {"-fA+7ZlGDQs#libkernel",attr_get_stack},
+        {"-quPa4SEJUw#libkernel",attr_get_stack_full},
         {"FXPWHNk8Of0#libkernel",attr_get_param}, {"El+cQ20DynU#libkernel",attr_set_guard},
         {"6UgtwV+0zb4#libkernel",thread_create}, {"onNY9Byn-W8#libkernel",thread_join},
         {"4qGrR6eoP9Y#libkernel",thread_detach}, {"3kg7rT0NQIs#libkernel",thread_exit},

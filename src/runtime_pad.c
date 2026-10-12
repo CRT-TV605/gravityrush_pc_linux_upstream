@@ -341,6 +341,35 @@ static void replay_sample(PadData *d) {
 /* After the menu or the text dialog closes, buttons still held (the Cross that accepted a
  * name) stay hidden until released: the game would take them as a new press. */
 static int hold_after_capture;
+/* Buttons of the gamepad and keyboard as mapped, even while the overlay holds the game neutral. */
+static uint32_t host_buttons(void) {
+    uint32_t buttons=0;
+    load_button_maps();
+    SDL_Gamepad *g=current_gamepad();
+    if (g) for (size_t i=0;i<pad_map.count;++i)
+        if (SDL_GetGamepadButton(g,(SDL_GamepadButton)pad_map.entries[i].source)) buttons|=pad_map.entries[i].ps;
+    const bool *k=SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL;
+    if (k) for (size_t i=0;i<key_map.count;++i) if (k[key_map.entries[i].source]) buttons|=key_map.entries[i].ps;
+    return buttons;
+}
+/* Buttons for the port's save list (sceSaveDataDialog), polled by the overlay every frame while
+ * it is open: the game stops reading the pad during the dialog. Gamepad and keyboard as mapped,
+ * scripted input, and the left stick as up/down. */
+static uint32_t list_buttons(void) {
+    pthread_mutex_lock(&lock);
+    read_inject();
+    uint32_t buttons=host_buttons()|injected.buttons;
+    SDL_Gamepad *g=current_gamepad();
+    if (g) {
+        const int y=SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFTY);
+        if (y<-16000) buttons|=BTN_UP;
+        else if (y>16000) buttons|=BTN_DOWN;
+    }
+    if (injected.stick[1]>=0 && injected.stick[1]<64) buttons|=BTN_UP;
+    else if (injected.stick[1]>192) buttons|=BTN_DOWN;
+    pthread_mutex_unlock(&lock);
+    return buttons;
+}
 static void sample(PadData *d) {
     sample_host(d);
     if (gow3gpu_overlay_captures_input()) { hold_after_capture=1; return; }
@@ -360,7 +389,11 @@ static void sample(PadData *d) {
     }
 }
 
-static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }
+static ABI int32_t pad_init(void) {
+    pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock);
+    gow3gpu_choice_set_input(list_buttons);
+    return 0;
+}
 static ABI int32_t pad_open(int32_t user, int32_t type, int32_t index, const void *param) {
     (void)param;
     if (!initialized) return ERR_NOT_INITIALIZED;
@@ -422,7 +455,14 @@ static ABI int32_t pad_light_bar(int32_t handle, const uint8_t *rgb) {
     if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
     (void)rgb; return 0;
 }
+/* scePadGetHandle: the handle scePadOpen returned for this user's standard port. */
+static ABI int32_t pad_get_handle(int32_t user, int32_t type, int32_t index) {
+    if (!initialized) return ERR_NOT_INITIALIZED;
+    if (user!=1 || (type!=0 && type!=2) || index) return ERR_INVALID_ARG;
+    return opened ? PAD_HANDLE : (int32_t)0x80920008; /* SCE_PAD_ERROR_NO_HANDLE */
+}
 static const RuntimeExport exports[]={
+    {"scePadGetHandle",pad_get_handle},
     {"scePadSetLightBar",pad_light_bar}, {"scePadResetLightBar",pad_ok_handle},
     {"scePadInit",pad_init}, {"scePadOpen",pad_open}, {"scePadClose",pad_close},
     {"scePadReadState",pad_read_state}, {"scePadRead",pad_read},

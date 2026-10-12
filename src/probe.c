@@ -130,6 +130,14 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
     if (gpu_enabled) gow3gpu_dump_guest_writes(info);
+    /* Top stack words: after a call through a null pointer [rsp] is the caller's return address. */
+    uintptr_t words[8];
+    SIZE_T read=0;
+    if (ReadProcessMemory(GetCurrentProcess(),(void *)c->Rsp,words,sizeof(words),&read) && read==sizeof(words))
+        for (int i=0;i<8;++i) {
+            describe_address(where,sizeof(where),words[i]);
+            fprintf(stderr,"  [rsp+%02x] %016llx %s\n",i*8,(unsigned long long)words[i],where);
+        }
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
     for (int depth=0; depth<24 && rbp; ++depth) {

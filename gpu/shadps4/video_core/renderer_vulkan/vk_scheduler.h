@@ -615,6 +615,13 @@ public:
         return storage + offset;
     }
 
+    /// Storage for data larger than a chunk (many descriptors in one set); freed with the
+    /// chunk's commands, so it lives exactly as long as in-chunk data would.
+    void* AllocateOversized(size_t bytes) {
+        oversized.push_back(std::make_unique<std::byte[]>(bytes));
+        return oversized.back().get();
+    }
+
     void Execute(vk::CommandBuffer cmdbuf) {
         for (CommandBase* command = first; command;) {
             CommandBase* const next = command->next;
@@ -624,6 +631,7 @@ public:
         }
         first = last = nullptr;
         used = 0;
+        oversized.clear();
     }
 
     [[nodiscard]] bool Empty() const noexcept {
@@ -644,6 +652,8 @@ private:
             __builtin_prefetch(storage + used + 448, 1, 3);
         }
     }
+
+    std::vector<std::unique_ptr<std::byte[]>> oversized;
 
     struct CommandBase {
         virtual ~CommandBase() = default;
@@ -767,7 +777,9 @@ public:
         if (!IsRecordingDeferred()) {
             return;
         }
-        ASSERT(bytes + 1024 <= RecordChunk::Capacity);
+        if (bytes + 1024 > RecordChunk::Capacity) {
+            bytes = 0; // RecordData() places it out of line; keep room for the command
+        }
         if (RecordChunk::Capacity - record_chunk->Size() < bytes + 1024) {
             full_chunks.push_back(std::move(record_chunk));
             record_chunk = AcquireChunk();
@@ -785,6 +797,9 @@ public:
         const size_t bytes = data.size_bytes();
         ReserveRecordData(bytes + alignof(T));
         auto* dst = static_cast<T*>(record_chunk->Allocate(bytes, alignof(T)));
+        if (!dst) {
+            dst = static_cast<T*>(record_chunk->AllocateOversized(bytes));
+        }
         std::memcpy(dst, data.data(), bytes);
         return {dst, data.size()};
     }
