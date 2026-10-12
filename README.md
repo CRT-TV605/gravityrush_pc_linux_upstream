@@ -54,7 +54,7 @@ More in [packaging/windows/README-Windows.txt](packaging/windows/README-Windows.
 2. Build (newer CLANG64 toolchains need the standard headers forced for some third-party code):
 
    ```bash
-   git clone --recursive https://github.com/<you>/medievil_pc
+   git clone --recursive https://github.com/bc160201983/medievil_pc
    cd medievil_pc
    CXXFLAGS="-include cstdlib -include cstdio -include cwchar -include cmath -include new" bash build.sh
    ```
