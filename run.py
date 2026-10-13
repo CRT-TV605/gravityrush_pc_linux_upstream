@@ -127,7 +127,9 @@ def main():
     if profile.get('ue4_render_scale'):
         import ue4_override
         try:
-            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution']), flush=True)
+            quality = graphics_options.read_ini(env['GOW3_CONFIG']).get('ue4_quality', 'console')
+            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'], quality),
+                  flush=True)
         except (OSError, ValueError) as error:
             print(f'Render resolution: unchanged ({error})', flush=True)
     original_game = game.resolve()

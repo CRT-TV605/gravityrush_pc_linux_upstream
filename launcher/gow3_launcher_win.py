@@ -135,7 +135,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '0',
                 'render_resolution': 'native', 'engine_fps': '120', 'fsr1': '0', 'rcas': '1',
-                'rcas_strength': '75', 'frames_queued': '1', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
+                'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'medieval' / 'CUSA11227')), 'user_dir': '',
@@ -326,6 +326,20 @@ def game_environment(s):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
     env.setdefault('GOW3_FPS_LOG', '1')  # FPS and worst frame every 5 s in the log (diagnostics)
+    # F12 in the game (or creating the trigger file) saves the next frame here, for bug reports.
+    # Each session gets its own folder (frame numbers restart at every start); one press saves
+    # 8 consecutive frames so flicker shows up between them.
+    shots = Path(s['user_dir'] or DATA_DIR / 'user') / 'screenshots'
+    session = shots / time.strftime('%Y%m%d-%H%M%S')
+    try:
+        session.mkdir(parents=True, exist_ok=True)
+        env.setdefault('GOW3_DUMP_DIR', str(session))
+        env.setdefault('GOW3_FRAME_DUMP_TRIGGER', str(shots / 'trigger'))
+        env.setdefault('GOW3_FRAME_DUMP_COUNT', '8')
+        # Diagnostics: GPU optimizations switched off while playing, by writing a number here.
+        env.setdefault('GOW3_TOGGLE_FILE', str(shots / 'toggles.txt'))
+    except OSError:
+        pass
     env['PYTHONUNBUFFERED'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
     return env
@@ -339,6 +353,8 @@ BG, PANEL, CARD, LINE = '#0b0a10', '#13111a', '#1b1824', '#2a2536'
 TEXT, MUTED, ACCENT, ACCENT_HI = '#ebe4d0', '#8d8799', '#3f7d1c', '#76c43a'
 RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('720p', ('720p (faster)',)),
                       ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',))]
+QUALITY_CHOICES = [('console', ('Console (PS4)',)), ('medium', ('Medium',)),
+                   ('low', ('Low (integrated graphics)',))]
 ENGINE_FPS_CHOICES = [('60', ('60 (original)',)), ('120', ('120',)), ('240', ('240',))]
 
 
@@ -511,7 +527,7 @@ class Launcher:
         cell = self.ttk.Frame(parent)
         self.ttk.Label(cell, text=title).pack(side='left')
         if restart:
-            self.ttk.Label(cell, text=_('restart'), style='Restart.TLabel').pack(side='left', padx=(8, 0))
+            self.ttk.Label(cell, text=_('applies at next start'), style='Restart.TLabel').pack(side='left', padx=(8, 0))
         return cell
 
     def row(self, parent, title, widget, hint=None, restart=False):
@@ -671,7 +687,7 @@ class Launcher:
         items = ((_('Display mode'), 'display_mode', 'ini', DISPLAY_MODES),
                  (_('Frame rate limit'), 'fps_limit', 'ini', FPS_LIMITS),
                  (_('Render resolution'), 'render_resolution', 'ini', RESOLUTION_CHOICES),
-                 (_('Game language', 'Язык игры'), 'language', 'app', LANGUAGES))
+                 (_('Graphics quality'), 'ue4_quality', 'ini', QUALITY_CHOICES))
         for index, (title, key, store, options) in enumerate(items):
             r, c = 2 + index // 2, (index % 2) * 2
             ttk.Label(quick, text=title).grid(row=r, column=c, sticky='w', pady=6, padx=(0, 12))
@@ -813,7 +829,11 @@ class Launcher:
                  _('MediEvil itself runs at up to 60 FPS; a lower limit saves power.'))
         self.row(f, _('Frames queued'), self.choice(f, 'frames_queued', 'ini', FRAMES_QUEUED),
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
-        self.section(f, _('Resolution'))
+        self.section(f, _('Resolution and quality'))
+        self.row(f, _('Graphics quality'), self.choice(f, 'ue4_quality', 'ini', QUALITY_CHOICES),
+                 _('Console keeps the PS4 look. Low turns off volumetric fog, reflections and ambient occlusion '
+                   'and lowers shadows and view distance: for integrated graphics (Radeon 780M, Intel Arc) and '
+                   'older cards. Applied at start.'), restart=True)
         self.row(f, _('Render resolution'), self.choice(f, 'render_resolution', 'ini', RESOLUTION_CHOICES),
                  _('The resolution the 3D scene is drawn at. 4K renders 3840 × 2160 and scales it to the game\'s '
                    '1080p picture: much sharper edges and detail, needs a fast graphics card. Applied at start '

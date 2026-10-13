@@ -3392,8 +3392,49 @@ void Rasterizer::UpdateDepthStencilState() const {
     dynamic_state.SetDepthBiasEnabled(depth_bias_enabled);
     if (depth_bias_enabled) {
         const bool front = regs.polygon_control.enable_polygon_offset_front;
+        // gow3: the constant offset is in units of the depth format the game names
+        // (PA_SU_POLY_OFFSET_DB_FMT_CNTL: 2^-16 for Z16). When the host depth buffer has another
+        // precision (Z16+S8 has no PC equivalent and becomes D32S8, about 2^-24 per unit), the
+        // same number was ~256 times too small: shadow acne, shadows flickering while moving.
+        float constant_scale = 1.0f;
+        if (const auto db_fmt = regs.poly_offset_db_fmt; !db_fmt.IsFloat() && db_fmt.NumDbBits() > 0) {
+            static thread_local u32 cached_key = ~0u;
+            static thread_local s32 cached_host_bits = 0;
+            const u32 key = (u32(regs.depth_buffer.z_info.format) << 8) |
+                            u32(regs.depth_buffer.stencil_info.format);
+            if (key != cached_key) {
+                cached_key = key;
+                switch (instance.GetSupportedFormat(
+                    LiverpoolToVK::DepthFormat(regs.depth_buffer.z_info.format,
+                                               regs.depth_buffer.stencil_info.format),
+                    vk::FormatFeatureFlagBits2::eDepthStencilAttachment)) {
+                case vk::Format::eD16Unorm:
+                case vk::Format::eD16UnormS8Uint:
+                    cached_host_bits = 16;
+                    break;
+                case vk::Format::eX8D24UnormPack32:
+                case vk::Format::eD24UnormS8Uint:
+                case vk::Format::eD32Sfloat: // float: 2^(e-23), 2^-24 for depths in [0.5, 1)
+                case vk::Format::eD32SfloatS8Uint:
+                    cached_host_bits = 24;
+                    break;
+                default:
+                    cached_host_bits = 0;
+                    break;
+                }
+            }
+            if (cached_host_bits != 0 && cached_host_bits != db_fmt.NumDbBits()) {
+                constant_scale = std::ldexp(1.0f, cached_host_bits - db_fmt.NumDbBits());
+                static std::atomic<bool> reported{false};
+                if (!reported.exchange(true)) {
+                    std::printf("GPU: depth bias in %d-bit units scaled x%g for the host depth format\n",
+                                db_fmt.NumDbBits(), constant_scale);
+                    std::fflush(stdout);
+                }
+            }
+        }
         dynamic_state.SetDepthBias(
-            front ? regs.poly_offset.front_offset : regs.poly_offset.back_offset,
+            (front ? regs.poly_offset.front_offset : regs.poly_offset.back_offset) * constant_scale,
             regs.poly_offset.depth_bias,
             (front ? regs.poly_offset.front_scale : regs.poly_offset.back_scale) / 16.f);
     }

@@ -388,7 +388,19 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
     static const char* frame_dump_trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
-    const bool frame_dump = frame_dump_trigger && std::remove(frame_dump_trigger) == 0;
+    // gow3: GOW3_FRAME_DUMP_COUNT=N dumps N consecutive frames per trigger (flicker reports).
+    static const int frame_dump_count = [] {
+        const char* env = std::getenv("GOW3_FRAME_DUMP_COUNT");
+        return env ? std::clamp(std::atoi(env), 1, 64) : 1;
+    }();
+    static int frame_dump_remaining = 0;
+    if (frame_dump_trigger && frame_dump_remaining == 0 && std::remove(frame_dump_trigger) == 0) {
+        frame_dump_remaining = frame_dump_count;
+    }
+    const bool frame_dump = frame_dump_remaining > 0;
+    if (frame_dump) {
+        --frame_dump_remaining;
+    }
     // gow3: scaled upscaler presets: the output-size display buffer drawn by the port.
     TemporalUpscaler::Display display{};
     const bool upscaled = rasterizer->GetUpscaler().DisplayOverride(cpu_address, display);

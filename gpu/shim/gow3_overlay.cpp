@@ -14,6 +14,7 @@
 
 #include <SDL3/SDL.h>
 #include "gow3_settings.h"
+#include "gow3_toggles.h"
 #include "gow3_orbs.h"
 #include "gow3_actors.h"
 #include "gow3_graphics.h"
@@ -778,9 +779,25 @@ void LoadingScreen() {
     ImGui::End();
 }
 
+// Diagnostics A/B tests (GOW3_TOGGLE_FILE): a large label names the active set of switched-off
+// optimizations, so a player can say which one stopped a glitch.
+const char* TestLabel() {
+    switch (runtime_disabled_optimizations) {
+    case 0: return nullptr;
+    case 0xFFFFFFFFFFFFFFFFull: return "TEST A";
+    case (32u | 128u | 1024u | (1u << 30)): return "TEST B";
+    case 0xFFFFFFFF00000000ull | 4096u | 8192u: return "TEST C";
+    case (64u | 256u | 16384u | 524288u): return "TEST D";
+    default: return "TEST";
+    }
+}
+
 void FpsCounter() {
     const auto& s = Gow3Settings::Get();
-    const std::string text = OverlayText();
+    std::string text = s.show_fps ? OverlayText() : std::string{};
+    if (const char* label = TestLabel()) {
+        text = std::string(label) + (text.empty() ? "" : "\n") + text;
+    }
     if (text.empty()) {
         return;
     }
@@ -796,7 +813,7 @@ void FpsCounter() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::SetWindowFontScale(s.overlay_scale / 100.0f);
+    ImGui::SetWindowFontScale((TestLabel() ? 250.0f : float(s.overlay_scale)) / 100.0f);
     ImGui::TextUnformatted(text.c_str());
     ImGui::End();
 }
@@ -1045,6 +1062,17 @@ bool HandleEvent(const SDL_Event& event) {
             Vulkan::FrameCapture::Request();
             return true;
         }
+        // F12: saves the next frame (GOW3_FRAME_DUMP_TRIGGER, set by the launcher) for bug reports.
+        if (down && !event.key.repeat && event.key.key == SDLK_F12) {
+            if (const char* trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER")) {
+                if (std::FILE* f = std::fopen(trigger, "wb")) {
+                    std::fclose(f);
+                    std::printf("Overlay: F12 frame dump requested\n");
+                    std::fflush(stdout);
+                }
+            }
+            return true;
+        }
         if (down && !event.key.repeat &&
             (event.key.key == SDLK_INSERT || (is_open && event.key.key == SDLK_ESCAPE))) {
             SetOpen(event.key.key == SDLK_INSERT ? !is_open : false);
@@ -1162,6 +1190,7 @@ void SetLoading(bool active, u32 done, u32 total) {
 bool Visible() {
     const auto& s = Gow3Settings::Get();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
+                           runtime_disabled_optimizations != 0 ||
                            choice_retiring || s.show_fps ||
                            (s.actor_watch_supported && s.enemy_health_bar));
 }
@@ -1252,7 +1281,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     if (menu_open) {
         Menu();
     }
-    if (Gow3Settings::Get().show_fps && !menu_open) {
+    if ((Gow3Settings::Get().show_fps || TestLabel()) && !menu_open) {
         FpsCounter();
     }
     if (!loading && !menu_open) {

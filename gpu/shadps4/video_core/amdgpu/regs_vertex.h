@@ -66,6 +66,18 @@ struct VgtNumInstances {
     }
 };
 
+// PA_SU_POLY_OFFSET_DB_FMT_CNTL: the depth format the polygon offset units refer to.
+struct PolyOffsetDbFormat {
+    u32 raw;
+    /// Depth bits of a fixed-point format (16 for Z16, 24 for Z24); 0 when not set.
+    [[nodiscard]] s32 NumDbBits() const noexcept {
+        return -static_cast<s32>(static_cast<s8>(raw & 0xFF));
+    }
+    [[nodiscard]] bool IsFloat() const noexcept {
+        return (raw >> 8) & 1;
+    }
+};
+
 struct PolygonOffset {
     float depth_bias;
     float front_scale;

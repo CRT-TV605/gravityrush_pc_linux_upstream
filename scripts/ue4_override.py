@@ -117,20 +117,45 @@ def set_values(ini, values):
     return (head + sep + '\n'.join(lines)).replace('\n', '\r\n').encode('utf-8')
 
 
-def apply(game, resolution='native'):
+# Graphics quality (gow3.ini ue4_quality): console keeps the PS4 settings; medium and low trade
+# effects for speed on integrated and older graphics cards.
+QUALITY = {
+    'console': {},
+    'medium': {
+        'r.ShadowQuality': '2', 'r.Shadow.MaxCSMResolution': '1536', 'r.Shadow.MaxResolution': '1024',
+        'r.AmbientOcclusionLevels': '1', 'r.SSR.Quality': '1', 'r.MotionBlurQuality': '2',
+        'r.DepthOfFieldQuality': '1', 'r.ViewDistanceScale': '0.85',
+    },
+    'low': {
+        'r.ShadowQuality': '1', 'r.Shadow.MaxCSMResolution': '1024', 'r.Shadow.MaxResolution': '512',
+        'r.Shadow.CSM.MaxCascades': '2', 'r.VolumetricFog': '0', 'r.AmbientOcclusionLevels': '0',
+        'r.SSR.Quality': '0', 'r.MotionBlurQuality': '0', 'r.DepthOfFieldQuality': '0',
+        'r.LensFlareQuality': '0', 'r.SceneColorFringeQuality': '0', 'r.BloomQuality': '2',
+        'r.RefractionQuality': '0', 'r.ViewDistanceScale': '0.7', 'foliage.DensityScale': '0.6',
+        'grass.DensityScale': '0.6',
+    },
+}
+
+
+def apply(game, resolution='native', quality='console'):
     """Writes or removes the override pak. Returns a short description of the active state."""
     pak = paks_dir(game) / PAK_NAME
+    values = dict(QUALITY.get(quality, {}))
     percentage = SCREEN_PERCENTAGE.get(resolution)
-    if not percentage:
+    if percentage:
+        values['r.ScreenPercentage'] = percentage
+    if not values:
         pak.unlink(missing_ok=True)
-        return 'native 1080p'
-    write_pak(pak, {CONFIG: set_values(read_file(game, CONFIG), {'r.ScreenPercentage': percentage})})
-    return f'{resolution} (r.ScreenPercentage={percentage})'
+        return 'native 1080p, console quality'
+    write_pak(pak, {CONFIG: set_values(read_file(game, CONFIG), values)})
+    return (f'{resolution if percentage else "native 1080p"}'
+            f'{f" (r.ScreenPercentage={percentage})" if percentage else ""}, {quality} quality')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('game', type=Path)
     parser.add_argument('--resolution', choices=list(SCREEN_PERCENTAGE), default='native')
+    parser.add_argument('--quality', choices=list(QUALITY), default='console')
     args = parser.parse_args()
-    print('Render resolution:', apply(args.game, args.resolution))
+    print('Render resolution:', apply(args.game, args.resolution, args.quality))
