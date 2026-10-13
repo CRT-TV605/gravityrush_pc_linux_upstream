@@ -317,7 +317,7 @@ def game_environment(s):
     env['GOW3_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
     env['GOW3_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
     env['GOW3_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'
-    env['GOW3_PERF_DIAG'] = '1' if s.get('perf_diag', False) else '0'
+    env.setdefault('GOW3_PERF_DIAG', '1' if s.get('perf_diag', False) else '0')
     for key, name in (('frame_stats', 'GOW3_FRAME_STATS'), ('gpu_profile', 'GOW3_GPU_PROFILE'),
                       ('vk_validation', 'GOW3_VK_VALIDATION'), ('frame_capture_key', 'GOW3_FRAME_CAPTURE_KEY')):
         if s[key]:
@@ -326,6 +326,7 @@ def game_environment(s):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
     env.setdefault('GOW3_FPS_LOG', '1')  # FPS and worst frame every 5 s in the log (diagnostics)
+    env.setdefault('GOW3_FRAME_STATS', '1')  # draws, compiles and stalls every 5 s (diagnostics)
     # F12 in the game (or creating the trigger file) saves the next frame here, for bug reports.
     # Each session gets its own folder (frame numbers restart at every start); one press saves
     # 8 consecutive frames so flicker shows up between them.
@@ -338,6 +339,9 @@ def game_environment(s):
         env.setdefault('GOW3_FRAME_DUMP_COUNT', '8')
         # Diagnostics: GPU optimizations switched off while playing, by writing a number here.
         env.setdefault('GOW3_TOGGLE_FILE', str(shots / 'toggles.txt'))
+        # Frame analyzer: creating this file records how the next frame is drawn (render passes).
+        env.setdefault('GOW3_CAPTURE_TRIGGER', str(shots / 'capture'))
+        env.setdefault('GOW3_CAPTURE_DIR', str(session))
     except OSError:
         pass
     env['PYTHONUNBUFFERED'] = '1'

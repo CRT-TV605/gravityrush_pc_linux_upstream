@@ -121,6 +121,27 @@ def set_values(ini, values):
 # effects for speed on integrated and older graphics cards.
 QUALITY = {
     'console': {},
+    # Diagnostics (not in the launcher): console quality with one effect off.
+    'diag_ao': {'r.AmbientOcclusionLevels': '0'},
+    'diag_ssr': {'r.SSR.Quality': '0'},
+    'diag_shadow': {'r.ShadowQuality': '2', 'r.Shadow.MaxCSMResolution': '1536'},
+    'diag_mb': {'r.MotionBlurQuality': '0'},
+    'diag_fxaa': {'r.PostProcessAAQuality': '2'},  # FXAA instead of temporal AA
+    'diag_localres': {'r.Shadow.MaxResolution': '512'},  # point/spot light shadow maps
+    'diag_nocube': {'r.AllowPointLightCubemapShadows': '0'},
+    'diag_fixedres': {'r.Shadow.MinResolution': '1024', 'r.Shadow.MaxResolution': '1024'},
+    # Fewer shadow draws (the GPU thread tops out near 2000 draws a frame at 60 FPS).
+    'diag_draws': {'r.Shadow.MinResolution': '512', 'r.Shadow.MaxResolution': '512',
+                   'r.Shadow.RadiusThreshold': '0.1', 'r.Shadow.CacheWholeSceneShadows': '1',
+                   'r.Shadow.CSM.MaxCascades': '2', 'r.Shadow.DistanceScale': '0.8'},
+    'diag_nopoint': {'r.Shadow.MinResolution': '512', 'r.Shadow.MaxResolution': '512',
+                     'r.Shadow.CacheWholeSceneShadows': '1', 'r.AllowPointLightCubemapShadows': '0'},
+    'diag_fixed512': {'r.Shadow.MinResolution': '512', 'r.Shadow.MaxResolution': '512',
+                      'r.Shadow.RadiusThreshold': '0.05', 'r.Shadow.CacheWholeSceneShadows': '1'},
+    'diag_lod': {'r.ViewDistanceScale': '0.7', 'foliage.DensityScale': '0.6', 'grass.DensityScale': '0.6',
+                 'r.Shadow.CSM.MaxCascades': '2'},
+    'diag_post': {'r.VolumetricFog': '0', 'r.DepthOfFieldQuality': '0', 'r.LensFlareQuality': '0',
+                  'r.SceneColorFringeQuality': '0', 'r.BloomQuality': '2', 'r.RefractionQuality': '0'},
     # Above the PS4: GPU cost, little memory (the game keeps its PS4 memory budget, so texture
     # streaming pools stay as shipped).
     'high': {
@@ -152,10 +173,29 @@ QUALITY = {
 }
 
 
+# Point and spot light shadows at one fixed size per preset, with small lights unshadowed. UE4
+# sizes them by their size on screen, so walking re-creates them constantly; those re-created
+# maps flickered on the port (shadows blinking while moving, MediEvil's outdoor levels).
+# The second number is r.Shadow.RadiusThreshold: lights smaller than that on screen cast no shadow.
+# Every shadowed point light redraws its surroundings six times, and the port's GPU thread keeps
+# 60 FPS up to about 2000 draws a frame; busy outdoor scenes reached 4000 (30 FPS) before.
+LOCAL_SHADOWS = {'ultra': (1024, 0.06), 'high': (1024, 0.08), 'console': (512, 0.1),
+                 'medium': (512, 0.12), 'low': (256, 0.15)}
+# Sun/moon shadow cascades and distance per preset (each cascade redraws the scene once).
+SUN_SHADOWS = {'ultra': ('3', '1.5'), 'high': ('3', '1.2'), 'console': ('2', '0.8'),
+               'medium': ('2', '0.75'), 'low': ('2', '0.6')}
+
+
 def apply(game, resolution='native', quality='console'):
     """Writes or removes the override pak. Returns a short description of the active state."""
     pak = paks_dir(game) / PAK_NAME
     values = dict(QUALITY.get(quality, {}))
+    if quality in LOCAL_SHADOWS:
+        size, threshold = LOCAL_SHADOWS[quality]
+        values.update({'r.Shadow.MinResolution': str(size), 'r.Shadow.MaxResolution': str(size),
+                       'r.Shadow.RadiusThreshold': str(threshold), 'r.Shadow.CacheWholeSceneShadows': '1'})
+        cascades, distance = SUN_SHADOWS[quality]
+        values.update({'r.Shadow.CSM.MaxCascades': cascades, 'r.Shadow.DistanceScale': distance})
     percentage = SCREEN_PERCENTAGE.get(resolution)
     if percentage:
         values['r.ScreenPercentage'] = percentage
