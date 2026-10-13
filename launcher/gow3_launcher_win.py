@@ -353,8 +353,8 @@ BG, PANEL, CARD, LINE = '#0b0a10', '#13111a', '#1b1824', '#2a2536'
 TEXT, MUTED, ACCENT, ACCENT_HI = '#ebe4d0', '#8d8799', '#3f7d1c', '#76c43a'
 RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('720p', ('720p (faster)',)),
                       ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',))]
-QUALITY_CHOICES = [('console', ('Console (PS4)',)), ('medium', ('Medium',)),
-                   ('low', ('Low (integrated graphics)',))]
+QUALITY_CHOICES = [('ultra', ('Ultra',)), ('high', ('High',)), ('console', ('Console (PS4)',)),
+                   ('medium', ('Medium',)), ('low', ('Low (integrated graphics)',))]
 ENGINE_FPS_CHOICES = [('60', ('60 (original)',)), ('120', ('120',)), ('240', ('240',))]
 
 
@@ -831,7 +831,7 @@ class Launcher:
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
         self.section(f, _('Resolution and quality'))
         self.row(f, _('Graphics quality'), self.choice(f, 'ue4_quality', 'ini', QUALITY_CHOICES),
-                 _('Console keeps the PS4 look. Low turns off volumetric fog, reflections and ambient occlusion '
+                 _('High and Ultra go beyond the PS4: sharper, longer-range shadows, better reflections and more distant detail, for strong graphics cards. Console keeps the PS4 look. Low turns off volumetric fog, reflections and ambient occlusion '
                    'and lowers shadows and view distance: for integrated graphics (Radeon 780M, Intel Arc) and '
                    'older cards. Applied at start.'), restart=True)
         self.row(f, _('Render resolution'), self.choice(f, 'render_resolution', 'ini', RESOLUTION_CHOICES),

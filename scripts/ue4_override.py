@@ -121,6 +121,21 @@ def set_values(ini, values):
 # effects for speed on integrated and older graphics cards.
 QUALITY = {
     'console': {},
+    # Above the PS4: GPU cost, little memory (the game keeps its PS4 memory budget, so texture
+    # streaming pools stay as shipped).
+    'high': {
+        'r.ShadowQuality': '4', 'r.Shadow.MaxCSMResolution': '2048', 'r.Shadow.MaxResolution': '2048',
+        'r.Shadow.DistanceScale': '1.5', 'r.AmbientOcclusionLevels': '3', 'r.SSR.Quality': '3',
+        'r.MaxAnisotropy': '16', 'r.ViewDistanceScale': '1.5', 'r.StaticMeshLODDistanceScale': '0.75',
+        'foliage.LODDistanceScale': '1.5',
+    },
+    'ultra': {
+        'r.ShadowQuality': '5', 'r.Shadow.MaxCSMResolution': '4096', 'r.Shadow.MaxResolution': '2048',
+        'r.Shadow.DistanceScale': '2', 'r.Shadow.CSM.MaxCascades': '4', 'r.AmbientOcclusionLevels': '3',
+        'r.SSR.Quality': '4', 'r.MaxAnisotropy': '16', 'r.ViewDistanceScale': '2',
+        'r.StaticMeshLODDistanceScale': '0.5', 'foliage.LODDistanceScale': '2',
+        'r.DetailMode': '2', 'r.MaterialQualityLevel': '1',
+    },
     'medium': {
         'r.ShadowQuality': '2', 'r.Shadow.MaxCSMResolution': '1536', 'r.Shadow.MaxResolution': '1024',
         'r.AmbientOcclusionLevels': '1', 'r.SSR.Quality': '1', 'r.MotionBlurQuality': '2',
