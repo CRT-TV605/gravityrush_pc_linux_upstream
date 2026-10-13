@@ -128,6 +128,14 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
+    // Only the recording thread may Record() or use its copy batch. A draw preparation worker
+    // obtaining a buffer copies at once, before the buffer is returned: recording from a worker
+    // while the GPU thread handed its chunk to the recorder wrote into a null chunk (crash in
+    // SmallGuestCopy, MediEvil), and a worker's thread-local copy batch could stay unflushed.
+    if (!scheduler.OwnsRecording() && scheduler.IsRecordingDeferred()) {
+        item.run(item);
+        return;
+    }
     if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
         scheduler.RecordHostCopy([item] { item.run(item); });
         return;

@@ -808,6 +808,13 @@ public:
     /// the raw command buffer (end of draws and dispatches); small batches are kept.
     void KickRecording(bool force = false);
 
+    /// gow3: whether this thread is the one recording into the current chunk (the last to kick
+    /// recording). Other threads (draw preparation workers) must not Record(): KickRecording
+    /// hands the chunk to the recorder and briefly leaves none.
+    [[nodiscard]] bool OwnsRecording() const noexcept {
+        return recording_owner.load(std::memory_order_relaxed) == std::this_thread::get_id();
+    }
+
     /// Waits until every recorded command is in the command buffer.
     void SyncRecording();
 
@@ -926,6 +933,7 @@ private:
     bool is_rendering = false;
     // gow3: threaded recording
     std::unique_ptr<RecordChunk> record_chunk;
+    std::atomic<std::thread::id> recording_owner{}; // see OwnsRecording()
     std::vector<std::unique_ptr<RecordChunk>> full_chunks;
     std::mutex recorder_mutex;
     std::condition_variable_any recorder_cv;
