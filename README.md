@@ -21,6 +21,10 @@ translates the PS4 GPU commands and shaders to Vulkan.
 - **Install from PKG**: the launcher (or `run.py`) unpacks a fake PKG once, resumably.
 - **Render resolution up to 4K**: the 3D scene is drawn at up to 3840 × 2160 and scaled to the
   game's 1080p picture (a UE4 config override pak, `scripts/ue4_override.py`).
+- **Graphics quality**: Low (integrated graphics such as the Radeon 780M), Medium, Console (PS4),
+  High and Ultra (sharper, longer-range shadows, better reflections and more distant detail).
+  Every preset keeps point/spot light shadows at one fixed size, which stops the shadow flicker
+  while moving, and limits shadow draws so busy outdoor scenes stay near 60 FPS.
 - **Launcher** in MediEvil's colors: home with cover art and quick settings, display, performance,
   game folder / PKG install / save backups, patches, mods, controls, diagnostics and log.
 - **In-game menu** (Insert, or R3+L2): image (display mode, VSync, FSR 1, sharpening),
