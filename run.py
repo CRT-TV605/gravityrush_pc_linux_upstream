@@ -126,8 +126,10 @@ def main():
         print(f'Game profile: {profile["name"]} ({", ".join(profile["modules"])})', flush=True)
     engine_fps = int(graphics['engine_fps'])
     if profile.get('ue4_render_scale') and engine_fps > 60:
-        # Unreal Engine 4 flips at every vblank (rhi.SyncInterval 1): the vblank rate is the cap.
-        env.setdefault('GOW3_VBLANK_HZ', str(engine_fps))
+        # Unreal Engine 4 flips at every vblank (rhi.SyncInterval 1). A 480 Hz vblank with a frame
+        # limit shows each frame when it is ready: a 120 Hz vblank turned 9 ms frames into 17 ms.
+        env.setdefault('GOW3_VBLANK_HZ', '0')
+        env.setdefault('GOW3_FPS_CAP', str(engine_fps))
     for key, value in profile['env'].items():
         env.setdefault(key, value)
     if profile.get('ue4_render_scale'):

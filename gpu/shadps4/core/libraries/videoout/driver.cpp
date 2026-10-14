@@ -664,9 +664,16 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
     // gow3: the in-game menu changes the limit live (Gow3Settings::fps_limit); GOW3_FPS_LIMIT
     // and the uncapped presets keep their fixed limit.
-    const bool fixed_limit = std::getenv("GOW3_FPS_LIMIT") || EmulatorSettings.GetVblankFrequency() == 480;
+    // MediEvil: in the uncapped mode a lower in-game limit still applies on top.
+    const bool env_limit = std::getenv("GOW3_FPS_LIMIT") != nullptr;
+    const bool fixed_limit = env_limit || EmulatorSettings.GetVblankFrequency() == 480;
     const auto current_limit = [&] {
-        return fixed_limit ? EmulatorSettings.GetFrameLimit() : u32(Gow3Settings::Get().fps_limit.load());
+        const u32 user = u32(Gow3Settings::Get().fps_limit.load());
+        if (!fixed_limit) {
+            return user;
+        }
+        const u32 base = EmulatorSettings.GetFrameLimit();
+        return !env_limit && user && (!base || user < base) ? user : base;
     };
     u32 frame_limit = current_limit();
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
