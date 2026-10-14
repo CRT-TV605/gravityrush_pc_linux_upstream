@@ -74,13 +74,13 @@ struct Values {
     std::atomic<int> frames_queued{1};
     // Startup: run.py turns them into patches and environment variables; "Apply and restart".
     std::atomic<int> render_resolution{0};
-    std::atomic<int> engine_fps{120};
+    std::atomic<int> engine_fps{60};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
-    int startup_render_resolution = 0, startup_engine_fps = 120;
+    int startup_render_resolution = 0, startup_engine_fps = 60;
     bool startup_deferred_readback = true, startup_stale_readback = true;
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};

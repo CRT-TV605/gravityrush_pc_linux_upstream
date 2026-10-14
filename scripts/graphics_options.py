@@ -12,7 +12,7 @@ from pathlib import Path
 
 RESOLUTIONS = ('native', '480p', '720p', '1440p', '1800p', '4K')
 ENGINE_FPS = (60, 120, 240)
-DEFAULTS = {'render_resolution': 'native', 'engine_fps': '120', 'deferred_readback': '1',
+DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1'}
 RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'
@@ -57,7 +57,7 @@ def startup_options(ini):
     if options['render_resolution'] not in RESOLUTIONS:
         options['render_resolution'] = 'native'
     if options['engine_fps'] not in {str(f) for f in ENGINE_FPS}:
-        options['engine_fps'] = '120'
+        options['engine_fps'] = '60'
     for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
         options[key] = '0' if options[key] == '0' else '1'
     return options

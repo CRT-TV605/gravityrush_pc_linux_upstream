@@ -45,7 +45,7 @@ inline int ParseResolution(std::string_view text) {
 }
 /// A listed ceiling, else 120 (the default patch).
 inline int ParseEngineFps(int value) {
-    return IndexOf(EngineFps, value, -1) >= 0 ? value : 120;
+    return IndexOf(EngineFps, value, -1) >= 0 ? value : 60;
 }
 
 /// Frames the GPU command thread may queue ahead of the GPU; 0 = unbounded.

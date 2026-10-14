@@ -39,7 +39,7 @@ APP_NAME = 'MediEvil'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build. New versions are on the GitHub releases page (the automatic updater is off).
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 RELEASES_API = None
 RELEASES_PAGE = 'https://github.com/bc160201983/medievil_2019_pc_port/releases'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'medievil-update'
@@ -133,7 +133,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '
                 'object_motion': '1', 'show_fps': '1', 'output_res': '1920x1080',
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '0',
-                'render_resolution': 'native', 'engine_fps': '120', 'fsr1': '0', 'rcas': '1',
+                'render_resolution': 'native', 'engine_fps': '60', 'fsr1': '0', 'rcas': '1',
                 'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
@@ -831,8 +831,12 @@ class Launcher:
     def build_performance(self):
         f = self.scrolled_page('performance', _('Performance'), _('Frame rate and speed options.'))
         self.section(f, _('Frame rate', 'Частота кадров'), top=4)
+        self.row(f, _('Engine frame rate'), self.choice(f, 'engine_fps', 'ini', ENGINE_FPS_CHOICES),
+                 _('The highest frame rate MediEvil runs at. The PS4 game stops at 60; 120 and 240 lift '
+                   'that limit (also set Frame rate limit to Unlimited or higher). Applied at start.'),
+                 restart=True)
         self.row(f, _('Frame rate limit'), self.choice(f, 'fps_limit', 'ini', FPS_LIMITS),
-                 _('MediEvil itself runs at up to 60 FPS; a lower limit saves power.'))
+                 _('Caps the frame rate below the engine frame rate; a lower limit saves power.'))
         self.row(f, _('Frames queued'), self.choice(f, 'frames_queued', 'ini', FRAMES_QUEUED),
                  _('1 is the lowest input latency; more can raise FPS when the graphics card is the limit.'))
         self.section(f, _('Resolution and quality'))
@@ -1246,9 +1250,11 @@ class Launcher:
         self.store_game_patches()
         mode = dict((v, t[0]) for v, t in DISPLAY_MODES).get(self.var('display_mode', 'ini').get(), '?')
         limit = self.var('fps_limit', 'ini').get()
+        engine = self.var('engine_fps', 'ini').get()
         resolution = dict((v, t[0]) for v, t in RESOLUTION_CHOICES).get(self.var('render_resolution', 'ini').get(), '?')
         return _('{} · {} · {} · VSync {}').format(
-            _(mode), _(resolution), _('up to 60 FPS') if limit in ('0', '60', '120', '240') else _('{} FPS').format(limit),
+            _(mode), _(resolution), _('up to {} FPS').format(engine) if limit == '0' or int(limit) >= int(engine)
+            else _('{} FPS').format(limit),
             _('on') if self.var('vsync', 'ini').get() else _('off'))
 
     def refresh_fsr4(self):

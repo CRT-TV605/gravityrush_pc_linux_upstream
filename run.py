@@ -124,14 +124,18 @@ def main():
     profile = game_profiles.profile(game)
     if profile['name']:
         print(f'Game profile: {profile["name"]} ({", ".join(profile["modules"])})', flush=True)
+    engine_fps = int(graphics['engine_fps'])
+    if profile.get('ue4_render_scale') and engine_fps > 60:
+        # Unreal Engine 4 flips at every vblank (rhi.SyncInterval 1): the vblank rate is the cap.
+        env.setdefault('GOW3_VBLANK_HZ', str(engine_fps))
     for key, value in profile['env'].items():
         env.setdefault(key, value)
     if profile.get('ue4_render_scale'):
         import ue4_override
         try:
             quality = graphics_options.read_ini(env['GOW3_CONFIG']).get('ue4_quality', 'console')
-            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'], quality),
-                  flush=True)
+            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'], quality,
+                                                           engine_fps), flush=True)
         except (OSError, ValueError) as error:
             print(f'Render resolution: unchanged ({error})', flush=True)
     original_game = game.resolve()

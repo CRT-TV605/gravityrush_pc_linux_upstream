@@ -424,7 +424,7 @@ void PerformanceTab() {
         ChoiceRow("Frame rate limit", s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
                   "Caps the frame rate. The engine frame rate (below) is the highest it can go.");
         const int effective = G::EffectiveFps(s.fps_limit, s.startup_engine_fps);
-        if (IsGow3() && (s.fps_limit == 0 || effective < s.fps_limit)) {
+        if (s.fps_limit == 0 || effective < s.fps_limit) {
             char text[48];
             std::snprintf(text, sizeof(text), "%d FPS (engine frame rate)", effective);
             InfoRow("Effective limit", text);
@@ -444,11 +444,10 @@ void PerformanceTab() {
                   int(G::Resolutions.size()),
                   IsGow3() ? "The resolution the game draws at. Higher is sharper and slower."
                            : "The resolution the 3D scene is drawn at, shown at 1080p: 4K is the sharpest.");
-        if (IsGow3()) { // the engine frame rate is a God of War III patch
-            static const char* const engine_labels[] = {"60 (original)", "120", "240"};
-            ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(),
-                      int(G::EngineFps.size()), "The highest frame rate the game itself runs at.");
-        }
+        // The highest frame rate the game runs at (Unreal Engine 4: run.py's override pak).
+        static const char* const engine_labels[] = {"60 (original)", "120", "240"};
+        ChoiceRow("Engine frame rate", s.engine_fps, engine_labels, G::EngineFps.data(),
+                  int(G::EngineFps.size()), "The highest frame rate the game itself runs at.");
         CheckRow("Game reads GPU data without waiting", s.stale_readback,
                  "Big FPS gain. Switch it off if lighting or objects look wrong.");
         CheckRow("Deferred GPU readbacks", s.deferred_readback,

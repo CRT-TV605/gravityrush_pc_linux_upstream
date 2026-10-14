@@ -24,6 +24,10 @@ Captured on Windows 11 (RTX 5080) with this port.
 ## What works
 
 - Boot, intro movies, menus and gameplay (tested on an RTX 5080: locked 60 FPS, also at 4K).
+- **Above 60 FPS**: Engine frame rate 120 or 240 (launcher > Performance, or the in-game menu) lifts
+  the PS4 game's 60 FPS cap. The cap is Unreal Engine 4's console frame-rate ceiling
+  (`SmoothedFrameRateRange`, applied with VSync on), raised by the config override pak; game speed
+  stays normal. An RTX 5080 runs menus at 120 and levels at about 85 to 110 FPS.
 - Audio (Wwise through AudioOut, ATRAC9 and AAC).
 - Controller (DualSense, Xbox and others, through SDL3) and keyboard, both remappable.
 - Saving and loading; save backups before every start.
@@ -42,7 +46,7 @@ Captured on Windows 11 (RTX 5080) with this port.
 
 ### Known limits
 
-- 60 FPS is the game's own limit; higher frame rates are not unlocked.
+- Above 60 FPS, busy levels are limited by the port's GPU command translation (one thread).
 - The 4K mode is supersampling: the output picture stays 1920 × 1080.
 - Experimental PS4 Pro mode (`GOW3_NEO=1`) stops in the texture cache.
 

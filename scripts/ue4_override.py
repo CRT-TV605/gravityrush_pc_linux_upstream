@@ -105,16 +105,34 @@ def write_pak(path, files, mount='../../../'):
     tmp.replace(path)
 
 
-def set_values(ini, values):
-    """Sets keys in [SystemSettings], replacing existing lines."""
-    text = ini.decode('utf-8-sig').replace('\r\n', '\n')
-    head, sep, rest = text.partition('[SystemSettings]\n')
+def set_section(text, section, values):
+    """Sets keys in the first [section] of an ini text, replacing existing lines there."""
+    head, sep, rest = text.partition(f'[{section}]\n')
     if not sep:
-        head, sep, rest = text + '\n', '[SystemSettings]\n', ''
-    lines = [l for l in rest.split('\n') if l.split('=', 1)[0].strip() not in values]
+        head, sep, rest = text.rstrip('\n') + '\n\n', f'[{section}]\n', ''
+    lines = rest.split('\n')
     section_end = next((i for i, l in enumerate(lines) if l.startswith('[')), len(lines))
-    lines[section_end:section_end] = [f'{k}={v}' for k, v in values.items()]
-    return (head + sep + '\n'.join(lines)).replace('\n', '\r\n').encode('utf-8')
+    body = [l for l in lines[:section_end] if l.strip() and l.split('=', 1)[0].strip() not in values]
+    body += [f'{k}={v}' for k, v in values.items()] + ['']
+    return head + sep + '\n'.join(body + lines[section_end:])
+
+
+def set_values(ini, values, engine=None):
+    """Sets keys in [SystemSettings] (console variables) and [/Script/Engine.Engine]."""
+    text = ini.decode('utf-8-sig').replace('\r\n', '\n')
+    if values:
+        text = set_section(text, 'SystemSettings', values)
+    if engine:
+        text = set_section(text, '/Script/Engine.Engine', engine)
+    return text.replace('\n', '\r\n').encode('utf-8')
+
+
+def frame_rate_range(fps):
+    """UGameEngine::GetMaxTickRate on consoles: with VSync on, the game ticks at most at the upper
+    bound of SmoothedFrameRateRange (BaseEngine.ini: below 62, so 60 FPS), even with
+    bSmoothFrameRate off. MediEvil keeps that default; a higher bound lifts the 60 FPS cap."""
+    return {'SmoothedFrameRateRange': '(LowerBound=(Type="ERangeBoundTypes::Inclusive",Value=22),'
+                                      f'UpperBound=(Type="ERangeBoundTypes::Exclusive",Value={fps + 2}))'}
 
 
 # Graphics quality (medievil.ini ue4_quality): console keeps the PS4 settings; medium and low trade
@@ -186,7 +204,7 @@ SUN_SHADOWS = {'ultra': ('3', '1.5'), 'high': ('3', '1.2'), 'console': ('2', '0.
                'medium': ('2', '0.75'), 'low': ('2', '0.6')}
 
 
-def apply(game, resolution='native', quality='console'):
+def apply(game, resolution='native', quality='console', fps=60):
     """Writes or removes the override pak. Returns a short description of the active state."""
     pak = paks_dir(game) / PAK_NAME
     values = dict(QUALITY.get(quality, {}))
@@ -199,12 +217,14 @@ def apply(game, resolution='native', quality='console'):
     percentage = SCREEN_PERCENTAGE.get(resolution)
     if percentage:
         values['r.ScreenPercentage'] = percentage
-    if not values:
+    engine = frame_rate_range(fps) if fps > 60 else {}
+    if not values and not engine:
         pak.unlink(missing_ok=True)
-        return 'native 1080p, console quality'
-    write_pak(pak, {CONFIG: set_values(read_file(game, CONFIG), values)})
+        return 'native 1080p, console quality, 60 FPS'
+    write_pak(pak, {CONFIG: set_values(read_file(game, CONFIG), values, engine)})
     return (f'{resolution if percentage else "native 1080p"}'
-            f'{f" (r.ScreenPercentage={percentage})" if percentage else ""}, {quality} quality')
+            f'{f" (r.ScreenPercentage={percentage})" if percentage else ""}, {quality} quality, '
+            f'{f"up to {fps}" if fps > 60 else 60} FPS')
 
 
 if __name__ == '__main__':
@@ -212,5 +232,6 @@ if __name__ == '__main__':
     parser.add_argument('game', type=Path)
     parser.add_argument('--resolution', choices=list(SCREEN_PERCENTAGE), default='native')
     parser.add_argument('--quality', choices=list(QUALITY), default='console')
+    parser.add_argument('--fps', type=int, default=60, help='engine frame rate (60 = original)')
     args = parser.parse_args()
-    print('Render resolution:', apply(args.game, args.resolution, args.quality))
+    print('Render resolution:', apply(args.game, args.resolution, args.quality, args.fps))
