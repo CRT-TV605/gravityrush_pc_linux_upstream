@@ -552,6 +552,68 @@ static const RuntimeExport exports[]={
     {"_ZNK3sce4Json6String4sizeEv",json_zero}, {"_ZNK3sce4Json6String5c_strEv",json_c_str},
     {"_ZNK3sce4Json6String5emptyEv",json_empty}, {"_ZNK3sce4Json6StringeqEPKc",json_equals},
 };
+/* MediEvil native output (GOW3_UE4_SETRES=WxH, run.py): the base PS4 renderer makes its buffers at
+ * the display size at start and only a live r.SetRes change resizes them (the debug menu's
+ * Cinematic button). After about 10 s of play this sets the game's own r.SetRes console variable
+ * as UE4's FSystemResolution::RequestResolutionChange does (0x2765ef1): flags = GetFlags()
+ * & 0xff000000 (vtable +0x20), Set(value, flags) (vtable +0x68). Called from scePadReadState on
+ * the game's input thread. CUSA11227 01.00 only: TAutoConsoleVariable at 0x5c28320, its
+ * IConsoleVariable* at +8. */
+/* Sets r.SetRes on the calling (game) thread; 0 when the game's variable is not where expected. */
+static int ue4_setres(const char *text) {
+    uint16_t value[24];
+    size_t n=strlen(text);
+    if (!n || n>=sizeof(value)/sizeof(value[0])) return 0;
+    for (size_t i=0;i<=n;++i) value[i]=(uint16_t)(unsigned char)text[i];
+    unsigned char *image=runtime_image_base();
+    if (!image) return 0;
+    const uintptr_t lo=(uintptr_t)image, hi=lo+0x6000000;
+    uintptr_t cvar=*(const uintptr_t *)(image+0x5c28328);
+    if (!cvar) { printf("Native output: r.SetRes not found\n"); return 0; }
+    uintptr_t vtable=*(const uintptr_t *)cvar;
+    if (vtable<lo || vtable>=hi) { printf("Native output: unexpected r.SetRes object\n"); return 0; }
+    typedef uint32_t (ABI *GetFlags)(uintptr_t);
+    typedef void (ABI *Set)(uintptr_t, const uint16_t *, uint32_t);
+    uintptr_t get_flags=*(const uintptr_t *)(vtable+0x20), set=*(const uintptr_t *)(vtable+0x68);
+    if (get_flags<lo || get_flags>=hi || set<lo || set>=hi) { printf("Native output: unexpected r.SetRes methods\n"); return 0; }
+    uint32_t flags=((GetFlags)get_flags)(cvar)&0xff000000u;
+    ((Set)set)(cvar,value,flags);
+    printf("Native output: r.SetRes %s (live resolution change)\n",text);
+    return 1;
+}
+
+/* A switch asked for by the in-game menu (window thread), done on the next game-thread poll. */
+static char ue4_requested[24];
+static int ue4_request_pending;
+void runtime_ue4_request_setres(const char *text) {
+    if (!text || strlen(text)>=sizeof(ue4_requested)) return;
+    strcpy(ue4_requested,text);
+    __atomic_store_n(&ue4_request_pending,1,__ATOMIC_RELEASE);
+}
+
+/* MediEvil native output (GOW3_UE4_SETRES=WxH, run.py): the base PS4 renderer makes its buffers at
+ * the display size at start and only a live r.SetRes change resizes them (the debug menu's
+ * Cinematic button). After about 10 s of play this sets the game's own r.SetRes console variable
+ * as UE4's FSystemResolution::RequestResolutionChange does (0x2765ef1): flags = GetFlags()
+ * & 0xff000000 (vtable +0x20), Set(value, flags) (vtable +0x68). Called from scePadReadState on
+ * the game's input thread. CUSA11227 01.00 only: TAutoConsoleVariable at 0x5c28320, its
+ * IConsoleVariable* at +8. */
+void runtime_ue4_setres_poll(void) {
+    static int automatic_done;
+    static unsigned reads;
+    if (__atomic_exchange_n(&ue4_request_pending,0,__ATOMIC_ACQ_REL)) {
+        char text[sizeof(ue4_requested)];
+        strcpy(text,ue4_requested);
+        if (reads>=600) ue4_setres(text);
+        automatic_done=1; /* a choice in the menu wins over the start setting */
+    }
+    if (automatic_done) return;
+    if (++reads<600) return; /* the main menu, with the game viewport up */
+    automatic_done=1;
+    const char *want=getenv("GOW3_UE4_SETRES");
+    if (want && *want) ue4_setres(want);
+}
+
 uintptr_t runtime_extra_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_extra_report(void) {
     printf("Runtime: event flags created=%zu, NGS2 silent renders=%zu\n",flags_created,ngs2_renders);

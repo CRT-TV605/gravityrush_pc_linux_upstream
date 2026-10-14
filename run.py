@@ -130,14 +130,23 @@ def main():
         # limit shows each frame when it is ready: a 120 Hz vblank turned 9 ms frames into 17 ms.
         env.setdefault('GOW3_VBLANK_HZ', '0')
         env.setdefault('GOW3_FPS_CAP', str(engine_fps))
-    for key, value in profile['env'].items():
-        env.setdefault(key, value)
     if profile.get('ue4_render_scale'):
         import ue4_override
+        # Native output: the runtime sets the game's r.SetRes live once it runs (runtime_extra.c).
+        if output := ue4_override.NATIVE_OUTPUT.get(graphics['render_resolution']):
+            env.setdefault('GOW3_UE4_SETRES', output)
+    for key, value in profile['env'].items():
+        env.setdefault(key, value)
+    profile_ue4 = bool(profile.get('ue4_render_scale'))
+    if profile_ue4:
+        import ue4_override
         try:
-            quality = graphics_options.read_ini(env['GOW3_CONFIG']).get('ue4_quality', 'console')
-            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'], quality,
-                                                           engine_fps), flush=True)
+            ini = graphics_options.read_ini(env['GOW3_CONFIG'])
+            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'],
+                                                           ini.get('ue4_quality', 'console'), engine_fps,
+                                                           ini.get('cheat_menu') == '1',
+                                                           ini.get('cheat_infinite_ammo') == '1',
+                                                           ini.get('ue4_upscale', 'off')), flush=True)
         except (OSError, ValueError) as error:
             print(f'Render resolution: unchanged ({error})', flush=True)
     original_game = game.resolve()
@@ -173,7 +182,8 @@ def main():
             # The patch notes give the direct memory and VBlank rate the selected patches need.
             names = selected_patches(profile[1], profile[2], env.get('GOW3_PATCHES', ''), env.get('GOW3_PATCHES_ONLY') == '1')
             # medievil.ini decides the resolution and frame rate patches (in-game menu, launcher).
-            names = graphics_options.patch_names(names, graphics)
+            if not profile_ue4:  # God of War III's resolution / frame rate patch names
+                names = graphics_options.patch_names(names, graphics)
             env['GOW3_PATCHES'] = ';'.join(names)
             env['GOW3_PATCHES_ONLY'] = '1'
             dmem, vblank = patch_requirements(profile[1], names, profile[2])

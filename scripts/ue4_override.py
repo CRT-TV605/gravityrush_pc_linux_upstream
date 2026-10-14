@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import os
 import struct
+import zlib
 from pathlib import Path
 
 PAK_MAGIC = 0x5A6F12E1
@@ -21,6 +22,14 @@ CONFIG = 'Engine/Config/PS4/PS4Engine.ini'
 # Render resolution (medievil.ini render_resolution) -> scene scale of the 1080p frame, in percent.
 SCREEN_PERCENTAGE = {'native': None, '480p': '44.444', '720p': '66.667', '1440p': '133.333',
                      '1800p': '166.667', '4K': '200'}
+# Native output: the game's own output size (PS4Engine.ini r.setres, 1920x1080 as shipped), shown
+# pixel for pixel on a 1440p or 4K display. 4K needs the "Native 4K framebuffer pool" patch.
+# Upscaling at native output (medievil.ini ue4_upscale): UE4's temporal upsampling renders the 3D
+# scene at a lower scale and its temporal AA rebuilds the full output from the game's own motion
+# vectors (as FSR 2 / DLSS do, without the AI). Not with the supersampling scales above.
+TEMPORAL_UPSCALE = {'quality': '66.667', 'balanced': '58', 'performance': '50'}
+NATIVE_OUTPUT = {'720p_native': '1280x720', '1440p_native': '2560x1440', '1800p_native': '3200x1800',
+                 '4K_native': '3840x2160'}
 
 
 def paks_dir(game):
@@ -28,7 +37,7 @@ def paks_dir(game):
 
 
 def read_index(path):
-    """{name: (offset, size, compression)} of a version 7 pak (unencrypted index)."""
+    """{name: (offset, size, compression, zlib blocks)} of a version 7 pak (unencrypted index)."""
     with open(path, 'rb') as f:
         f.seek(os.path.getsize(path) - 44)
         magic, version, index_offset, index_size = struct.unpack('<IIQQ', f.read(24))
@@ -57,25 +66,33 @@ def read_index(path):
         name = fstring()
         offset, size, _uncompressed, compression = struct.unpack_from('<qqqi', index, pos)
         pos += 48
+        blocks = []
         if compression:
-            blocks, = struct.unpack_from('<i', index, pos)
-            pos += 4 + 16 * blocks
+            count_blocks, = struct.unpack_from('<i', index, pos)
+            pos += 4
+            for _ in range(count_blocks):
+                blocks.append(struct.unpack_from('<qq', index, pos))  # [start, end) from the entry
+                pos += 16
         pos += 5
-        entries[name] = (offset, size, compression)
+        entries[name] = (offset, size, compression, blocks)
     return entries
 
 
 def read_file(game, name):
-    """A file of the game's own paks (uncompressed entries only)."""
+    """A file of the game's own paks (stored or zlib-compressed)."""
     for pak in sorted(paks_dir(game).glob('pakchunk*-ps4.pak')):
         entries = read_index(pak)
         if name in entries:
-            offset, size, compression = entries[name]
-            if compression:
-                raise ValueError(f'{name} is compressed')
+            offset, size, compression, blocks = entries[name]
             with open(pak, 'rb') as f:
-                f.seek(offset + 53)  # the entry header in front of the data
-                return f.read(size)
+                if not compression:
+                    f.seek(offset + 53)  # the entry header in front of the data
+                    return f.read(size)
+                data = bytearray()
+                for start, end in blocks:
+                    f.seek(offset + start)
+                    data += zlib.decompress(f.read(end - start))
+                return bytes(data)
     raise FileNotFoundError(name)
 
 
@@ -204,7 +221,84 @@ SUN_SHADOWS = {'ultra': ('3', '1.5'), 'high': ('3', '1.2'), 'console': ('2', '0.
                'medium': ('2', '0.75'), 'low': ('2', '0.6')}
 
 
-def apply(game, resolution='native', quality='console', fps=60):
+# The developers' debug menu (R3 in the game: level select, complete level, gear and items for
+# the level, runes, gold, life bottles, invulnerability). OverbiteGameSingleton reads the switch.
+GAME_CONFIG = 'OVERBITE/Config/PS4/PS4Game.ini'
+
+
+def debug_menu_config(game, enabled):
+    text = read_file(game, GAME_CONFIG).decode('utf-8-sig').replace('\r\n', '\n')
+    text = '\n'.join(l for l in text.split('\n') if not l.strip().startswith('AllowDebugMenu')).replace(' \n', '\n')
+    text = set_section(text, '/Script/OVERBITE.OverbiteGameSingleton',
+                       {'AllowDebugMenu': 'true' if enabled else 'false'})
+    return text.replace('\n', '\r\n').encode('utf-8')
+
+
+# The debug menu's widget Blueprint: when it is created it calls SetFrameRateLimit(60) and
+# ApplySettings ("Set FPS Max to 30" off), which capped the game at 60 FPS again; 0 is no limit.
+# Its "Cinematic Mode (1440p)" button (r.SetRes) becomes 4K and a profiling toggle 1440p. Same-length edits only (the Blueprint
+# bytecode and the package's export sizes stay valid); each must match exactly once.
+DEBUG_HUD = 'OVERBITE/Content/Blueprints/Debug/DebugHUD.uexp'
+DEBUG_HUD_EDITS = [
+    # SetFrameRateLimit(60.0): EX_FloatConst 60.0 after the call to that import.
+    (bytes.fromhex('1c1dffffff1e00007042'), bytes.fromhex('1c1dffffff1e00000000'), 1),
+    # 4K needs the "Native 4K framebuffer pool" patch (patches/MediEvil.xml): the PS4 pool of
+    # 128 MB ran out of memory.
+    (b'r.SetRes 2560x1440\0', b'r.SetRes 3840x2160\0', 1),
+    (b'Cinematic Mode (1440p)\0', b'Cinematic Mode (2160p)\0', 2),
+    # The "Show Stat SceneRendering" toggle (a profiling overlay) switches to 1440p instead.
+    (b'\x1fstat SceneRendering\0', b'\x1fr.SetRes 2560x1440 \0', 1),
+    (b'Show Stat SceneRendering\0', b'Render 2560x1440 (1440p)\0', 2),
+]
+
+
+# The debug menu's first resolution button follows the native output setting: the base PS4
+# renderer makes its buffers at the display size at start, so only a live r.SetRes switches.
+# Command and label keep their lengths (the game's own 18 and 22 characters).
+NATIVE_BUTTON = {'720p_native': (b'r.SetRes 1280x720 ', b'Cinematic Mode (720p) '),
+                 '1440p_native': (b'r.SetRes 2560x1440', b'Cinematic Mode (1440p)'),
+                 '1800p_native': (b'r.SetRes 3200x1800', b'Cinematic Mode (1800p)'),
+                 '4K_native': (b'r.SetRes 3840x2160', b'Cinematic Mode (2160p)')}
+
+
+def debug_hud(game, resolution='native'):
+    data = read_file(game, DEBUG_HUD)
+    for old, new, count in DEBUG_HUD_EDITS:
+        if data.count(old) != count:
+            raise ValueError(f'{DEBUG_HUD}: unexpected contents (game version?)')
+        data = data.replace(old, new)
+    if resolution in NATIVE_BUTTON:
+        command, label = NATIVE_BUTTON[resolution]
+        data = data.replace(b'r.SetRes 3840x2160\0', command + b'\0', 1)
+        data = data.replace(b'Cinematic Mode (2160p)\0', label + b'\0')
+    return data
+
+
+# Unlimited ammo: every weapon uses up ammo (and wear) through the Blueprint function
+# RemoveInventoryItemHealth(Item, Health), which adds Subtract_IntInt(0, Health) to the item. Health
+# becomes the function's own result variable, still 0 then (UE4 zeroes a script function's locals):
+# nothing is taken and the item's real count is still returned (no "out of ammo"). The operand must
+# keep its size on disk and in memory (an object reference is 8 bytes loaded): EX_IntConst instead
+# broke the loaded bytecode and crashed at start. Weapons stop wearing out, the Store may not
+# charge for what uses the same function.
+INFINITE_AMMO = 'OVERBITE/Content/Blueprints/GameInstance/OverbiteGameInstanceFunctions.uexp'
+INFINITE_AMMO_EDITS = [
+    (bytes.fromhex('6816ffffff1d00000000007d030000161b53'),
+     bytes.fromhex('6816ffffff1d00000000007c030000161b53'), 1),
+]
+
+
+def edited_asset(game, name, edits):
+    data = read_file(game, name)
+    for old, new, count in edits:
+        if data.count(old) != count:
+            raise ValueError(f'{name}: unexpected contents (game version?)')
+        data = data.replace(old, new)
+    return data
+
+
+def apply(game, resolution='native', quality='console', fps=60, debug_menu=False, infinite_ammo=False,
+          upscale='off'):
     """Writes or removes the override pak. Returns a short description of the active state."""
     pak = paks_dir(game) / PAK_NAME
     values = dict(QUALITY.get(quality, {}))
@@ -217,21 +311,40 @@ def apply(game, resolution='native', quality='console', fps=60):
     percentage = SCREEN_PERCENTAGE.get(resolution)
     if percentage:
         values['r.ScreenPercentage'] = percentage
+    output = NATIVE_OUTPUT.get(resolution)
+    if output:
+        values['r.setres'] = output
+    scale = TEMPORAL_UPSCALE.get(upscale) if not percentage else None
+    if scale:
+        values.update({'r.ScreenPercentage': scale, 'r.TemporalAA.Upsampling': '1'})
     engine = frame_rate_range(fps) if fps > 60 else {}
-    if not values and not engine:
+    if not values and not engine and not debug_menu and not infinite_ammo:
         pak.unlink(missing_ok=True)
         return 'native 1080p, console quality, 60 FPS'
-    write_pak(pak, {CONFIG: set_values(read_file(game, CONFIG), values, engine)})
-    return (f'{resolution if percentage else "native 1080p"}'
-            f'{f" (r.ScreenPercentage={percentage})" if percentage else ""}, {quality} quality, '
-            f'{f"up to {fps}" if fps > 60 else 60} FPS')
+    files = {CONFIG: set_values(read_file(game, CONFIG), values, engine)}
+    # Native output: the base PS4 renderer makes its buffers at the display size at start and only
+    # a live r.SetRes changes them; the runtime sets it (GOW3_UE4_SETRES), and the debug menu's
+    # first resolution button follows the setting.
+    if debug_menu:
+        files[GAME_CONFIG] = debug_menu_config(game, True)
+        files[DEBUG_HUD] = debug_hud(game, resolution)
+    if infinite_ammo:
+        files[INFINITE_AMMO] = edited_asset(game, INFINITE_AMMO, INFINITE_AMMO_EDITS)
+    write_pak(pak, files)
+    return (f'{resolution if percentage or output else "native 1080p"}'
+            f'{f" (r.ScreenPercentage={percentage})" if percentage else ""}'
+            f'{f" (r.setres={output})" if output else ""}'
+            f'{f", temporal upscaling {upscale} ({scale}%)" if scale else ""}, {quality} quality, '
+            f'{f"up to {fps}" if fps > 60 else 60} FPS{", debug menu (R3)" if debug_menu else ""}'
+            f'{", unlimited ammo" if infinite_ammo else ""}')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('game', type=Path)
-    parser.add_argument('--resolution', choices=list(SCREEN_PERCENTAGE), default='native')
+    parser.add_argument('--resolution', choices=[*SCREEN_PERCENTAGE, *NATIVE_OUTPUT], default='native')
     parser.add_argument('--quality', choices=list(QUALITY), default='console')
     parser.add_argument('--fps', type=int, default=60, help='engine frame rate (60 = original)')
+    parser.add_argument('--debug-menu', action='store_true', help='allow the developer debug menu (R3)')
     args = parser.parse_args()
-    print('Render resolution:', apply(args.game, args.resolution, args.quality, args.fps))
+    print('Render resolution:', apply(args.game, args.resolution, args.quality, args.fps, args.debug_menu))

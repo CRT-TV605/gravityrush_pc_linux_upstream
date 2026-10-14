@@ -417,6 +417,7 @@ static ABI int32_t pad_read_state(int32_t handle, PadData *data) {
     pthread_mutex_lock(&lock);
     sample(data); ++reads;
     pthread_mutex_unlock(&lock);
+    runtime_ue4_setres_poll();
     return 0;
 }
 /* Buffered read: the port samples once per call, so one entry is returned. */

@@ -39,7 +39,7 @@ APP_NAME = 'MediEvil'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build. New versions are on the GitHub releases page (the automatic updater is off).
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 RELEASES_API = None
 RELEASES_PAGE = 'https://github.com/bc160201983/medievil_2019_pc_port/releases'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'medievil-update'
@@ -126,7 +126,7 @@ def windows_language():
 # Settings. medievil.ini keys (the game reads them, the in-game menu edits them) and the
 # launcher's own settings.json (passed to run.py as environment variables).
 
-INI_FLAGS = {'cheat_double_jumps', 'cheat_very_hard', 'sharpen', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
+INI_FLAGS = {'cheat_menu', 'cheat_infinite_ammo', 'cheat_double_jumps', 'cheat_very_hard', 'sharpen', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
              'stale_readback', 'fsr1', 'rcas'}
 # The graphics keys are also in the in-game menu (Insert / R3+L2); run.py reads the startup ones.
 INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '0.50',
@@ -134,7 +134,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '
                 'live_resolution': 'auto', 'display_mode': 'windowed', 'vsync': '1', 'fps_limit': '0',
                 'async_shaders': '1', 'deferred_readback': '1', 'stale_readback': '0',
                 'render_resolution': 'native', 'engine_fps': '60', 'fsr1': '0', 'rcas': '1',
-                'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0'}
+                'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0', 'cheat_menu': '0', 'cheat_infinite_ammo': '0', 'ue4_upscale': 'off'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'medieval' / 'CUSA11227')), 'user_dir': '',
@@ -358,7 +358,11 @@ def game_environment(s):
 BG, PANEL, CARD, LINE = '#0b0a10', '#13111a', '#1b1824', '#2a2536'
 TEXT, MUTED, ACCENT, ACCENT_HI = '#ebe4d0', '#8d8799', '#3f7d1c', '#76c43a'
 RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('720p', ('720p (faster)',)),
-                      ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',))]
+                      ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',)),
+                      ('720p_native', ('720p native output',)), ('1440p_native', ('1440p native output',)),
+                      ('1800p_native', ('1800p native output',)), ('4K_native', ('4K native output (4K TV)',))]
+UPSCALE_CHOICES = [('off', ('Off',)), ('quality', ('Quality (67%)',)), ('balanced', ('Balanced (58%)',)),
+                   ('performance', ('Performance (50%)',))]
 QUALITY_CHOICES = [('ultra', ('Ultra',)), ('high', ('High',)), ('console', ('Console (PS4)',)),
                    ('medium', ('Medium',)), ('low', ('Low (integrated graphics)',))]
 ENGINE_FPS_CHOICES = [('60', ('60 (original)',)), ('120', ('120',)), ('240', ('240',))]
@@ -845,9 +849,15 @@ class Launcher:
                    'and lowers shadows and view distance: for integrated graphics (Radeon 780M, Intel Arc) and '
                    'older cards. Applied at start.'), restart=True)
         self.row(f, _('Render resolution'), self.choice(f, 'render_resolution', 'ini', RESOLUTION_CHOICES),
-                 _('The resolution the 3D scene is drawn at. 4K renders 3840 × 2160 and scales it to the game\'s '
-                   '1080p picture: much sharper edges and detail, needs a fast graphics card. Applied at start '
-                   '(the in-game menu restarts the game for it).'), restart=True)
+                 _('720p to 4K: the 3D scene is drawn at that size and scaled to the game\'s 1080p picture (4K: '
+                   'much sharper edges and detail on a 1080p screen). "Native output": the game itself runs at '
+                   'that size, pixel for pixel on a 1440p or 4K display or TV. Applied at start (the in-game '
+                   'menu restarts the game for it).'), restart=True)
+        self.row(f, _('Upscaling (native output)'), self.choice(f, 'ue4_upscale', 'ini', UPSCALE_CHOICES),
+                 _("The game's own temporal upscaler: the 3D scene is drawn at a lower scale and rebuilt at full "
+                   'size from its motion vectors (like FSR 2). For the native output modes and Native 1080p on '
+                   'slower graphics cards; Quality looks close to full resolution. Applied at start.'),
+                 restart=True)
         self.section(f, _('Shaders'))
         self.check(f, 'pipeline_binary_cache', 'app', _('Use pipeline binary cache (A/B test)'),
                    _('Reuse saved Vulkan pipelines. Disable to compare FPS with normal compilation. '
@@ -889,6 +899,14 @@ class Launcher:
         self.build_save_backups(f)
         self.section(f, _('Language'))
         self.row(f, _('Game language', 'Язык игры'), self.choice(f, 'language', 'app', LANGUAGES))
+        self.section(f, _('Cheats'))
+        self.check(f, 'cheat_menu', 'ini', _('Developer cheat menu (R3 in the game)'),
+                   _("MediEvil's own debug menu, left in the game by its developers: level select, complete "
+                     'level, weapons and items for the level, runes, gold, life bottles and more. Press R3 '
+                     '(click the right stick) during play. Applied at start.'))
+        self.check(f, 'cheat_infinite_ammo', 'ini', _('Unlimited ammo'),
+                   _('Daggers, crossbow and longbow bolts, lightning and the other weapons never run out, and '
+                     'weapons and shields do not wear out. Applied at start.'))
 
     def user_dir(self):
         return Path(self.var('user_dir', 'app').get() or DATA_DIR / 'user')

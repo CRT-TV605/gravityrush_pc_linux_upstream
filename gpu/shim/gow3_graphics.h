@@ -19,8 +19,10 @@ inline constexpr std::array<const char*, DisplayModeCount> DisplayModeNames = {
 inline constexpr std::array<int, 5> FpsLimits = {30, 60, 120, 240, 0};
 
 /// Game patch suffixes ("Resolution Patch - <name>"); "native" is no resolution patch.
-inline constexpr std::array<std::string_view, 6> Resolutions = {"native", "480p", "720p",
-                                                                "1440p", "1800p", "4K"};
+/// Unreal Engine 4 (MediEvil): the scene scale; the *_native ones change the game's output size.
+inline constexpr std::array<std::string_view, 10> Resolutions = {
+    "native", "480p", "720p", "1440p", "1800p", "4K",
+    "720p_native", "1440p_native", "1800p_native", "4K_native"};
 /// Engine frame rate ceilings: 60 is the game's own, 120 and 240 are frame rate patches.
 inline constexpr std::array<int, 3> EngineFps = {60, 120, 240};
 

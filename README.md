@@ -23,17 +23,28 @@ Captured on Windows 11 (RTX 5080) with this port.
 
 ## What works
 
-- Boot, intro movies, menus and gameplay (tested on an RTX 5080: locked 60 FPS, also at 4K).
+- Boot, intro movies, menus and gameplay (tested on an RTX 5080, a 1080p 200 Hz monitor and a 4K TV).
 - **Above 60 FPS**: Engine frame rate 120 or 240 (launcher > Performance, or the in-game menu) lifts
   the PS4 game's 60 FPS cap. The cap is Unreal Engine 4's console frame-rate ceiling
   (`SmoothedFrameRateRange`, applied with VSync on), raised by the config override pak; game speed
-  stays normal. An RTX 5080 runs menus at 120 and levels at about 85 to 110 FPS.
+  stays normal. Frames are shown as soon as they are ready (a 480 Hz virtual vblank with a frame
+  limit), so pacing stays even. An RTX 5080 runs menus at 120 and levels at about 90 to 120 FPS.
 - Audio (Wwise through AudioOut, ATRAC9 and AAC).
 - Controller (DualSense, Xbox and others, through SDL3) and keyboard, both remappable.
 - Saving and loading; save backups before every start.
 - **Install from PKG**: the launcher (or `run.py`) unpacks a fake PKG once, resumably.
 - **Render resolution up to 4K**: the 3D scene is drawn at up to 3840 × 2160 and scaled to the
-  game's 1080p picture (a UE4 config override pak, `scripts/ue4_override.py`).
+  game's 1080p picture (a UE4 config override pak, `scripts/ue4_override.py`): sharpest on a
+  1080p screen.
+- **Native output 720p, 1440p, 1800p and 4K** (for 1440p/4K monitors and TVs): the game itself
+  switches to that size a few seconds after start, through its own `r.SetRes` console variable.
+  The in-game menu (Performance > Game resolution now) switches between 1080p, 1440p, 1800p and
+  4K at any time. Native 4K needs a larger PS4 framebuffer pool: the built-in patch
+  `patches/MediEvil.xml` ("Native 4K framebuffer pool (512 MB)", on by default) raises it from
+  128 MB.
+- **Temporal upscaling** (launcher > Performance > Upscaling): the game's own UE4 temporal
+  upsampling renders the 3D scene at 67%, 58% or 50% and rebuilds the full picture from its
+  motion vectors, for native output and slower graphics cards.
 - **Graphics quality**: Low (integrated graphics such as the Radeon 780M), Medium, Console (PS4),
   High and Ultra (sharper, longer-range shadows, better reflections and more distant detail).
   Every preset keeps point/spot light shadows at one fixed size, which stops the shadow flicker
@@ -44,10 +55,31 @@ Captured on Windows 11 (RTX 5080) with this port.
   performance and the performance overlay.
 - Online features (PSN) answer as a console that is not signed in.
 
+### Cheats (launcher > Game > Cheats)
+
+- **Developer cheat menu**: MediEvil's own debug menu, left in the game by its developers and
+  switched on by the override pak. Press **R3** while playing: unlock all levels, level select,
+  complete level, unlock all weapons, invincibility, all runes and quest items, life bottles,
+  gold, chalices, fly mode and more. Its 60 FPS lock is removed.
+- **Unlimited ammo**: daggers, crossbow and longbow bolts, lightning and the other weapons never
+  run out (weapons and shields also stop wearing out).
+
+### Performance work in this port
+
+- Texture cache images share VMA memory blocks instead of one driver allocation each (Unreal
+  Engine 4 reuses render target memory every frame): 22% of the draw recording thread was spent
+  creating and freeing GPU memory.
+- A sampling profiler for the GPU threads: `GOW3_SAMPLE_FILE=<prefix>` and
+  `scripts/symbolize_samples.py`.
+
 ### Known limits
 
-- Above 60 FPS, busy levels are limited by the port's GPU command translation (one thread).
-- The 4K mode is supersampling: the output picture stays 1920 × 1080.
+- Above 60 FPS, the busiest levels are limited by the port's GPU command translation (one thread).
+- After a live resolution change the debug menu's gamepad navigation cannot reach its right-hand
+  column: switch to 1080p (in-game menu > Performance) to use the cheats, then back.
+- All patches and cheats are for MediEvil 01.00 (the base game, CUSA11227); do not install the
+  01.02 update.
+- FSR 3 frame generation is planned (needs the game's motion vectors and depth).
 - Experimental PS4 Pro mode (`GOW3_NEO=1`) stops in the texture cache.
 
 ## Download and play
@@ -95,7 +127,8 @@ More in [packaging/windows/README-Windows.txt](packaging/windows/README-Windows.
 | Loader | `src/probe.c` | Loads the image and starts the game's original code |
 | Runtime | `src/runtime_*.c` | PS4 system functions; `runtime_extra.c` holds the ones added for MediEvil |
 | GPU | `gpu/shadps4/` | shadPS4 video core (Vulkan) with the speed work of the port it is based on |
-| Resolution | `scripts/ue4_override.py` | Writes the UE4 override pak for the chosen render resolution |
+| Override pak | `scripts/ue4_override.py` | Resolution, quality, frame rate cap, debug menu and unlimited ammo (config and Blueprint edits) |
+| Game patches | `patches/MediEvil.xml` | Code patches for 01.00 (native 4K framebuffer pool) |
 | Launcher | `launcher/medievil_launcher.py` | Settings, PKG install, mods, controls and the play button |
 
 To port another PS4 game the same way: the loader stops at the first system function the runtime

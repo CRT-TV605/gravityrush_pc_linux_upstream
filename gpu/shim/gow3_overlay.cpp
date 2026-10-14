@@ -23,6 +23,7 @@
 
 extern Gow3ActorSlot gow3_actor_slots[2];
 extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
+extern "C" void runtime_ue4_request_setres(const char* text); // src/runtime_extra.c: live r.SetRes
 #include "common/elf_info.h"
 #include "imgui.h"
 #include "imgui_internal.h" // RegisterUserTexture (save pictures)
@@ -436,10 +437,28 @@ void PerformanceTab() {
                  "Fewer stutters in new areas; an object or effect may appear a moment later.");
         ImGui::EndTable();
     }
+    if (!IsGow3()) {
+        // MediEvil: the game's own resolution, switched live (as its debug menu does). The debug
+        // menu's gamepad navigation needs 1080p: switch there for cheats, then back.
+        ImGui::SeparatorText("Game resolution now");
+        static constexpr const char* labels[] = {"1080p", "1440p", "1800p", "4K"};
+        static constexpr const char* values[] = {"1920x1080", "2560x1440", "3200x1800", "3840x2160"};
+        for (int i = 0; i < 4; ++i) {
+            if (i) {
+                ImGui::SameLine();
+            }
+            if (ImGui::Button(labels[i])) {
+                runtime_ue4_request_setres(values[i]);
+            }
+        }
+        ImGui::TextWrapped("Switches the game's output now. Use 1080p for the debug menu (R3), then switch back.");
+    }
     ImGui::SeparatorText("Applied on restart");
     if (BeginRows("##restart")) {
         // God of War III: a resolution patch. Unreal Engine 4 games (MediEvil): the scene scale.
-        static const char* const resolution_labels[] = {"Native (1080p)", "480p", "720p", "1440p", "1800p", "4K"};
+        static const char* const resolution_labels[] = {
+            "Native (1080p)", "480p", "720p", "1440p", "1800p", "4K",
+            "720p native output", "1440p native output", "1800p native output", "4K native output"};
         ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr,
                   int(G::Resolutions.size()),
                   IsGow3() ? "The resolution the game draws at. Higher is sharper and slower."

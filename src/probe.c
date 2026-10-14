@@ -34,6 +34,8 @@ typedef struct { uint64_t target, kind, value, addend; } Reloc;
 static char (*names)[128];
 static uint64_t import_count;
 static unsigned char *image;
+/* The loaded game image (eboot vaddr 0), for runtime code that reads the game's own data. */
+unsigned char *runtime_image_base(void) { return image; }
 static size_t page_size;
 typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module; } LinkedModule;
 static LinkedModule modules[16];

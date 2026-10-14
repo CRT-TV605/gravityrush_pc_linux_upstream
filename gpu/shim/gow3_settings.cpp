@@ -7,8 +7,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Gow3Settings {
 
@@ -256,8 +258,42 @@ bool ResolutionNeedsRestart() {
          (v.upscaler == UpscalerTaa) != (v.startup_upscaler == UpscalerTaa));
 }
 
+namespace {
+// "key" of a "key=value" line, empty for comments and other lines.
+std::string LineKey(const std::string& line) {
+    const size_t eq = line.find('=');
+    if (eq == std::string::npos || line.empty() || line[0] == '#') {
+        return {};
+    }
+    size_t end = eq;
+    while (end > 0 && (line[end - 1] == ' ' || line[end - 1] == '\t')) {
+        --end;
+    }
+    return line.substr(0, end);
+}
+
+std::vector<std::string> ReadLines(const char* path) {
+    std::vector<std::string> lines;
+    if (FILE* file = std::fopen(path, "r")) {
+        char buffer[1024];
+        while (std::fgets(buffer, sizeof(buffer), file)) {
+            std::string line = buffer;
+            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+                line.pop_back();
+            }
+            lines.push_back(std::move(line));
+        }
+        std::fclose(file);
+    }
+    return lines;
+}
+} // namespace
+
 void Save() {
     const auto& v = Get();
+    // medievil.ini also holds the launcher's keys (graphics quality, cheats, upscaling): they are
+    // kept as they are (rewriting only this menu's keys dropped them).
+    const std::vector<std::string> previous = ReadLines(Path());
     FILE* file = std::fopen(Path(), "w");
     if (!file) {
         std::printf("Settings: cannot write %s\n", Path());
@@ -303,13 +339,27 @@ void Save() {
                  Gow3Graphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
-                 Gow3Graphics::Resolutions[std::clamp(v.render_resolution.load(), 0, 5)].data(),
+                 Gow3Graphics::Resolutions[std::clamp(v.render_resolution.load(), 0, int(Gow3Graphics::Resolutions.size()) - 1)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
     std::fclose(file);
+    std::set<std::string> written;
+    for (const std::string& line : ReadLines(Path())) {
+        written.insert(LineKey(line));
+    }
+    if (FILE* append = std::fopen(Path(), "a")) {
+        for (const std::string& line : previous) {
+            const std::string key = LineKey(line);
+            if (!key.empty() && !written.contains(key)) {
+                std::fprintf(append, "%s\n", line.c_str());
+                written.insert(key);
+            }
+        }
+        std::fclose(append);
+    }
 }
 
 float PresetScale(int preset) {
