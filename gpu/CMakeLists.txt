@@ -142,7 +142,7 @@ set(COMMON
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
-# Windows: a DLL cannot leave the runtime_* symbols for gow3-probe.exe to resolve, so the
+# Windows: a DLL cannot leave the runtime_* symbols for medievil-runtime.exe to resolve, so the
 # library is static there and linked into the executable.
 if (WIN32)
     set(GOW3GPU_KIND STATIC)
@@ -168,7 +168,7 @@ set_source_files_properties(shim/gow3_overlay.cpp PROPERTIES
 target_include_directories(gow3gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
 target_compile_definitions(gow3gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(gow3gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
-# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against gow3-probe.
+# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against medievil-runtime.
 if (NOT WIN32)
     target_link_options(gow3gpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
@@ -195,15 +195,15 @@ if (WIN32)
     add_library(atrac9 STATIC ${GOW3_ATRAC9})
     target_compile_options(atrac9 PRIVATE -w)
     set_target_properties(atrac9 PROPERTIES C_STANDARD 99 INTERPROCEDURAL_OPTIMIZATION OFF)
-    add_executable(gow3-probe ../src/probe.c ${GOW3_RUNTIME} ../src/compat_win.c ../src/vulkan_smoke.c
-        ../packaging/windows/gow3-probe.rc)
-    set_target_properties(gow3-probe PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
-    target_compile_options(gow3-probe PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror -Wno-unknown-warning-option -Wno-unused-but-set-global>)
-    target_include_directories(gow3-probe PRIVATE .. ../src)
-    target_link_libraries(gow3-probe PRIVATE gow3gpu atrac9 onecore bcrypt ws2_32 -pthread)
+    add_executable(medievil-runtime ../src/probe.c ${GOW3_RUNTIME} ../src/compat_win.c ../src/vulkan_smoke.c
+        ../packaging/windows/medievil-runtime.rc)
+    set_target_properties(medievil-runtime PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
+    target_compile_options(medievil-runtime PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror -Wno-unknown-warning-option -Wno-unused-but-set-global>)
+    target_include_directories(medievil-runtime PRIVATE .. ../src)
+    target_link_libraries(medievil-runtime PRIVATE gow3gpu atrac9 onecore bcrypt ws2_32 -pthread)
     # The PS4 range (64 GiB - 1 TiB) must stay free: no high-entropy ASLR for heaps and stacks.
     # The guest main thread runs on the process stack: 16 MiB, committed (no stack probes).
-    target_link_options(gow3-probe PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
+    target_link_options(medievil-runtime PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
     # gow3: runtime unit tests (ninja -C out/gpu mp3-test videodec-test services-test).
     add_executable(mp3-test EXCLUDE_FROM_ALL ../tests/test_mp3.c ../src/runtime_mp3.c ../src/compat_win.c)
     add_executable(videodec-test EXCLUDE_FROM_ALL ../tests/test_videodec.c ../src/compat_win.c)
@@ -219,12 +219,12 @@ if (WIN32)
     target_compile_options(pad-map-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     target_include_directories(pad-map-test PRIVATE .. ../src)
     target_link_libraries(pad-map-test PRIVATE PkgConfig::SDL3 bcrypt -pthread)
-    add_executable(gow3-gpu-capabilities ../tools/gpu_capabilities.c ../packaging/windows/gow3-gpu-capabilities.rc)
-    target_link_libraries(gow3-gpu-capabilities PRIVATE Vulkan::Vulkan)
+    add_executable(medievil-gpu-check ../tools/gpu_capabilities.c ../packaging/windows/medievil-gpu-check.rc)
+    target_link_libraries(medievil-gpu-check PRIVATE Vulkan::Vulkan)
     # "Play God of War III.exe": the game with the launcher's saved settings, no launcher window.
-    add_executable(gow3-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
-    target_compile_options(gow3-play PRIVATE -municode)
-    target_link_options(gow3-play PRIVATE -municode)
+    add_executable(medievil-play WIN32 ../packaging/windows/play.c ../packaging/windows/play.rc)
+    target_compile_options(medievil-play PRIVATE -municode)
+    target_link_options(medievil-play PRIVATE -municode)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.

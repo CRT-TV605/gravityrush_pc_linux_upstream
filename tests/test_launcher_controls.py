@@ -3,7 +3,7 @@ import unittest
 
 from paths import ROOT
 sys.path.insert(0, str(ROOT / 'launcher'))
-import gow3_launcher_win as launcher  # noqa: E402
+import medievil_launcher as launcher  # noqa: E402
 
 
 class ControlMapTest(unittest.TestCase):

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""MediEvil (PS4, CUSA11227) launcher for Windows (Tkinter), on the gow3 port's runtime.
+"""MediEvil (PS4, CUSA11227) launcher for Windows (Tkinter).
 
 Every setting of the port in one window: the game (a folder or the .pkg, unpacked once), saves,
-gow3.ini (display, frame rate, shaders, GPU data), start-up options passed to run.py as
+medievil.ini (display, frame rate, shaders, GPU data), start-up options passed to run.py as
 environment variables, mods, third-party patches and controls.
 Launcher options live in %APPDATA%/medievil-launcher/settings.json.
 
@@ -32,20 +32,19 @@ PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).r
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
 import save_backup  # noqa: E402  (scripts/)
 DATA_DIR = Path(os.environ.get('GOW3_DATA_DIR', PORT_DIR))
-CONFIG_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'medievil-launcher'
+CONFIG_DIR = Path(os.environ.get('APPDATA') or os.environ.get('USERPROFILE') or PORT_DIR) / 'medievil-launcher'
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
 MOD_PRESETS = DATA_DIR / 'mods_presets.json'
 APP_NAME = 'MediEvil'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-# This build. The MediEvil port has no release feed: the God of War III one would install that
-# game's port over this one, so updates are off.
-VERSION = '1.0.0'
+# This build. New versions are on the GitHub releases page (the automatic updater is off).
+VERSION = '1.1.0'
 RELEASES_API = None
-RELEASES_PAGE = 'https://github.com/FelipePrado0/gow3_pc'
+RELEASES_PAGE = 'https://github.com/bc160201983/medievil_2019_pc_port/releases'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'medievil-update'
 # Never copied over an installation by an update (the package does not hold them either).
-USER_FILES = ('user', 'out', 'mods', 'gow3.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
+USER_FILES = ('user', 'out', 'mods', 'medievil.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
 
 
 # ---------------------------------------------------------------------------------------------
@@ -95,11 +94,11 @@ def run_command():
 
 # ---------------------------------------------------------------------------------------------
 # Languages: every text is written in English with the Russian next to it; the other
-# languages are in gow3_lang.py, keyed by the English text.
+# languages are in lang.py, keyed by the English text.
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import button_icons  # noqa: E402
-import gow3_lang  # noqa: E402
+import lang  # noqa: E402
 
 LANG = 'en'
 
@@ -112,7 +111,7 @@ def _(en, ru=None):
         return _(en[:-len(WARN)], ru and ru.removesuffix(WARN)) + WARN
     if LANG == 'ru':
         return ru or en
-    return gow3_lang.table(LANG).get(en) or en
+    return lang.table(LANG).get(en) or en
 
 
 def windows_language():
@@ -120,11 +119,11 @@ def windows_language():
         primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3ff
     except (AttributeError, OSError):
         return 'en'
-    return gow3_lang.WINDOWS_LANGUAGES.get(primary, 'en')
+    return lang.WINDOWS_LANGUAGES.get(primary, 'en')
 
 
 # ---------------------------------------------------------------------------------------------
-# Settings. gow3.ini keys (the game reads them, the in-game menu edits them) and the
+# Settings. medievil.ini keys (the game reads them, the in-game menu edits them) and the
 # launcher's own settings.json (passed to run.py as environment variables).
 
 INI_FLAGS = {'cheat_double_jumps', 'cheat_very_hard', 'sharpen', 'object_motion', 'show_fps', 'vsync', 'async_shaders', 'deferred_readback',
@@ -206,7 +205,7 @@ DRAW_PIPE = [('', ('Auto (8+ threads)', 'Авто (8+ потоков)')), ('1', 
 READBACKS = [('', ('Relaxed (default)', 'Relaxed (по умолчанию)')), ('0', ('Off', 'Выключены')),
              ('2', ('Precise',))]
 FRAMES_QUEUED = [('1', ('1 (lowest latency)',)), ('2', ('2',)), ('0', ('Unlimited',))]
-UI_LANGUAGES = gow3_lang.LANGUAGE_NAMES
+UI_LANGUAGES = lang.LANGUAGE_NAMES
 
 FSR4_COMMIT = 'ae8d628fae208813172446d1e49ed94150b04658'
 FSR4_BASE = f'https://raw.githubusercontent.com/FireBurn/Q2RTX/{FSR4_COMMIT}/baseq2/fsr4_shaders'
@@ -237,7 +236,10 @@ def load_json(path, default):
 
 
 def ini_path():
-    return Path(os.environ.get('GOW3_CONFIG', DATA_DIR / 'gow3.ini'))
+    old = DATA_DIR / 'gow3.ini'  # settings of builds before 1.1
+    if not (DATA_DIR / 'medievil.ini').exists() and old.exists():
+        old.rename(DATA_DIR / 'medievil.ini')
+    return Path(os.environ.get('GOW3_CONFIG', DATA_DIR / 'medievil.ini'))
 
 
 def load_ini():
@@ -265,7 +267,7 @@ def save_ini(values, lines):
                 continue
         out.append(line)
     if not lines:
-        out.append('# gow3 settings (in-game menu: Insert / R3+L2)')
+        out.append('# MediEvil settings (in-game menu: Insert / R3+L2)')
     out += [f'{key}={value}' for key, value in values.items() if key not in written]
     ini_path().write_text('\n'.join(out) + '\n', encoding='utf-8')
 
@@ -750,8 +752,8 @@ class Launcher:
         stays out of the menu."""
         ttk = self.ttk
         f = self.scrolled_page('graphics', _('Graphics', 'Графика'),
-                               _('Stored in gow3.ini; the in-game menu (Insert or R3+L2) changes the same values.',
-                                 'Хранится в gow3.ini; в игре меняется через меню (Insert или R3+L2).'))
+                               _('Stored in medievil.ini; the in-game menu (Insert or R3+L2) changes the same values.',
+                                 'Хранится в medievil.ini; в игре меняется через меню (Insert или R3+L2).'))
         self.section(f, _('Upscaling', 'Апскейлинг'), top=4)
         self.row(f, _('Upscaler', 'Апскейлер'), self.choice(f, 'upscaler', 'ini', UPSCALERS),
                  _("Temporal upscaling with the game's own motion vectors. FSR 4 needs its assets (below) and "
@@ -1003,7 +1005,7 @@ class Launcher:
 
     def build_patches(self):
         """Community patches of the selected game's built-in XML and third-party patch files.
-        Resolution and frame rate patches follow Performance (gow3.ini; run.py adds them)."""
+        Resolution and frame rate patches follow Performance (medievil.ini; run.py adds them)."""
         f = self.scrolled_page('patches', _('Patches', 'Патчи'), _('Changes applied to the game code at start.'))
         self.section(f, _('Game patches', 'Патчи игры'), top=4)
         self.game_patch_frame = self.ttk.Frame(f)
@@ -1052,7 +1054,7 @@ class Launcher:
 
     def store_game_patches(self):
         """The page's selection into settings (the whole list for this game, without the resolution
-        and frame rate patches: run.py adds those from gow3.ini)."""
+        and frame rate patches: run.py adds those from medievil.ini)."""
         if not self.game_patch_title:
             return
         self.app.setdefault('game_patches', {})[self.game_patch_title] = \
@@ -1169,7 +1171,7 @@ class Launcher:
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(6, 0))
         ttk.Button(holder, text=_('Port folder', 'Папка порта'), command=lambda: self.open_path(DATA_DIR)).pack(side='left')
-        ttk.Button(holder, text='gow3.ini', command=lambda: self.open_path(ini_path())).pack(side='left', padx=6)
+        ttk.Button(holder, text='medievil.ini', command=lambda: self.open_path(ini_path())).pack(side='left', padx=6)
         holder = ttk.Frame(f)
         holder.grid(row=self.next_row(f), column=0, columnspan=2, sticky='w', pady=(10, 0))
         ttk.Button(holder, text=_('Clear shader cache', 'Очистить кэш шейдеров'), command=self.clear_cache).pack(side='left')
@@ -1397,7 +1399,7 @@ class Launcher:
             self.refresh_lists()
 
     def collect(self):
-        """Writes settings.json, gow3.ini, mods.json and patches.json."""
+        """Writes settings.json, medievil.ini, mods.json and patches.json."""
         self.store_game_patches()
         for key, var in self.vars.items():
             try:
@@ -1591,7 +1593,7 @@ class Launcher:
                 shutil.rmtree(UPDATE_DIR, ignore_errors=True)
                 UPDATE_DIR.mkdir(parents=True, exist_ok=True)
                 archive = UPDATE_DIR / 'update.zip'
-                request = urllib.request.Request(url, headers={'User-Agent': 'gow3-launcher'})
+                request = urllib.request.Request(url, headers={'User-Agent': 'medievil-launcher'})
                 with urllib.request.urlopen(request, timeout=60) as response, open(archive, 'wb') as out:
                     total, done, shown = int(response.headers.get('Content-Length') or 0), 0, -1
                     while chunk := response.read(1 << 20):
@@ -1604,11 +1606,11 @@ class Launcher:
                 with zipfile.ZipFile(archive) as package:
                     package.extractall(UPDATE_DIR / 'new')
                 archive.unlink()
-                new = next((p.parent for p in (UPDATE_DIR / 'new').rglob('God of War III.exe')), None)
+                new = next((p.parent for p in (UPDATE_DIR / 'new').rglob('MediEvil.exe')), None)
                 if not new:
-                    raise OSError('God of War III.exe is missing from the download')
+                    raise OSError('MediEvil.exe is missing from the download')
                 # The new launcher copies itself over this installation once this one has closed.
-                subprocess.Popen([str(new / 'God of War III.exe'), '--install-update', str(PORT_DIR), str(os.getpid())],
+                subprocess.Popen([str(new / 'MediEvil.exe'), '--install-update', str(PORT_DIR), str(os.getpid())],
                                  cwd=str(new), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
                 self.ui_calls.put(self.root.destroy)
             except (OSError, zipfile.BadZipFile) as failure:
@@ -1658,7 +1660,7 @@ class Launcher:
 
 
 class GameJob:
-    """A Windows job holding run.py and everything it starts: gow3-probe.exe and the launches made
+    """A Windows job holding run.py and everything it starts: medievil-runtime.exe and the launches made
     by the in-game restart (no longer descendants of the first process)."""
 
     def __init__(self, process):
@@ -1705,7 +1707,7 @@ def version_tuple(text):
 def latest_release():
     """(version, zip URL, page URL) of the newest GitHub release."""
     request = urllib.request.Request(RELEASES_API, headers={'Accept': 'application/vnd.github+json',
-                                                            'User-Agent': 'gow3-launcher'})
+                                                            'User-Agent': 'medievil-launcher'})
     with urllib.request.urlopen(request, timeout=15) as response:
         release = json.load(response)
     version = '.'.join(re.findall(r'\d+', release['tag_name']))
@@ -1737,7 +1739,7 @@ def install_update(target, wait_pid):
             'Не удалось установить обновление. Скачайте его со страницы релизов.'), APP_NAME, 0x10)
         webbrowser.open(RELEASES_PAGE)
         return 1
-    subprocess.Popen([str(target / 'God of War III.exe')], cwd=str(target))
+    subprocess.Popen([str(target / 'MediEvil.exe')], cwd=str(target))
     return 0
 
 

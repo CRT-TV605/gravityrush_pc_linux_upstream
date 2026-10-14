@@ -549,7 +549,7 @@ void Menu() {
     // gow3: the game's own title (param.sfo), not a fixed one.
     static const std::string heading = [] {
         const std::string_view title = Common::ElfInfo::Instance().Title();
-        return std::string(title.empty() ? "God of War III" : title) + "  (Insert / R3+L2)";
+        return std::string(title.empty() ? "MediEvil" : title) + "  (Insert / R3+L2)";
     }();
     if (!ImGui::Begin(heading.c_str(), &keep_open, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
@@ -600,7 +600,7 @@ void Menu() {
 
     ImGui::Separator();
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", footer_help ? footer_help : "L1 / R1 or Q / E: switch tabs. Settings are saved in gow3.ini.");
+    ImGui::TextDisabled("%s", footer_help ? footer_help : "L1 / R1 or Q / E: switch tabs. Settings are saved in medievil.ini.");
     ImGui::PopTextWrapPos();
     if (const int changes = RestartChanges()) {
         ImGui::TextColored(ImVec4(0.85f, 0.72f, 0.45f, 1.0f), "%d change%s need%s a restart (unsaved progress is lost).",

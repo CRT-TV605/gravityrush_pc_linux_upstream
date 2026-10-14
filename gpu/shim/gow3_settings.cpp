@@ -16,7 +16,7 @@ namespace {
 
 const char* Path() {
     const char* env = std::getenv("GOW3_CONFIG");
-    return env && env[0] ? env : "gow3.ini";
+    return env && env[0] ? env : "medievil.ini";
 }
 
 float Clamp(float v, float lo, float hi) {

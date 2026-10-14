@@ -18,7 +18,7 @@ from pathlib import Path
 PAK_MAGIC = 0x5A6F12E1
 PAK_NAME = 'pakchunk99-ps4_P.pak'
 CONFIG = 'Engine/Config/PS4/PS4Engine.ini'
-# Render resolution (gow3.ini render_resolution) -> scene scale of the 1080p frame, in percent.
+# Render resolution (medievil.ini render_resolution) -> scene scale of the 1080p frame, in percent.
 SCREEN_PERCENTAGE = {'native': None, '480p': '44.444', '720p': '66.667', '1440p': '133.333',
                      '1800p': '166.667', '4K': '200'}
 
@@ -117,7 +117,7 @@ def set_values(ini, values):
     return (head + sep + '\n'.join(lines)).replace('\n', '\r\n').encode('utf-8')
 
 
-# Graphics quality (gow3.ini ue4_quality): console keeps the PS4 settings; medium and low trade
+# Graphics quality (medievil.ini ue4_quality): console keeps the PS4 settings; medium and low trade
 # effects for speed on integrated and older graphics cards.
 QUALITY = {
     'console': {},

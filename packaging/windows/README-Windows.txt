@@ -34,7 +34,7 @@ Render resolution
 Next time
 - "Play MediEvil.exe" starts the game straight away with the saved settings (shortcut, Steam).
 - Saves, shader cache and the log: user\ next to MediEvil.exe (keep it when updating).
-- Settings: gow3.ini next to MediEvil.exe; launcher options in %APPDATA%\medievil-launcher.
+- Settings: medievil.ini next to MediEvil.exe; launcher options in %APPDATA%\medievil-launcher.
 
 If something goes wrong
 - Black screen at start: Advanced > Clear shader cache, then start again.

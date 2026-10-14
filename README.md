@@ -12,6 +12,15 @@ translates the PS4 GPU commands and shaders to Vulkan.
 > folder or a fake package (.pkg). This project is not affiliated with Sony Interactive
 > Entertainment or Other Ocean. MediEvil is a trademark of Sony Interactive Entertainment.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![The Graveyard](docs/screenshots/graveyard.jpg) | ![Combat](docs/screenshots/combat.jpg) |
+| ![Spirit flames in The Graveyard](docs/screenshots/spirits.jpg) | ![World map](docs/screenshots/world-map.jpg) |
+
+Captured on Windows 11 (RTX 5080) with this port.
+
 ## What works
 
 - Boot, intro movies, menus and gameplay (tested on an RTX 5080: locked 60 FPS, also at 4K).
@@ -36,7 +45,6 @@ translates the PS4 GPU commands and shaders to Vulkan.
 - 60 FPS is the game's own limit; higher frame rates are not unlocked.
 - The 4K mode is supersampling: the output picture stays 1920 × 1080.
 - Experimental PS4 Pro mode (`GOW3_NEO=1`) stops in the texture cache.
-- The God of War III cheats, multipliers and code patches do not apply and are hidden.
 
 ## Download and play
 
@@ -58,12 +66,12 @@ More in [packaging/windows/README-Windows.txt](packaging/windows/README-Windows.
 2. Build (newer CLANG64 toolchains need the standard headers forced for some third-party code):
 
    ```bash
-   git clone --recursive https://github.com/bc160201983/medievil_pc
+   git clone --recursive https://github.com/bc160201983/medievil_2019_pc_port
    cd medievil_pc
    CXXFLAGS="-include cstdlib -include cstdio -include cwchar -include cmath -include new" bash build.sh
    ```
 
-3. Start the launcher with `MediEvil Launcher.cmd` (or `python launcher/gow3_launcher_win.py`),
+3. Start the launcher with `MediEvil Launcher.cmd` (or `python launcher/medievil_launcher.py`),
    or the game directly:
 
    ```powershell
@@ -82,9 +90,9 @@ More in [packaging/windows/README-Windows.txt](packaging/windows/README-Windows.
 | Preparation | `scripts/` | Reads `eboot.bin`, links the game's `libc`, `libSceFios2` and `libSceNpToolkit2` |
 | Loader | `src/probe.c` | Loads the image and starts the game's original code |
 | Runtime | `src/runtime_*.c` | PS4 system functions; `runtime_extra.c` holds the ones added for MediEvil |
-| GPU | `gpu/shadps4/` | shadPS4 video core (Vulkan) with the gow3 port's speed work |
+| GPU | `gpu/shadps4/` | shadPS4 video core (Vulkan) with the speed work of the port it is based on |
 | Resolution | `scripts/ue4_override.py` | Writes the UE4 override pak for the chosen render resolution |
-| Launcher | `launcher/gow3_launcher_win.py` | Settings, PKG install, mods, controls and the play button |
+| Launcher | `launcher/medievil_launcher.py` | Settings, PKG install, mods, controls and the play button |
 
 To port another PS4 game the same way: the loader stops at the first system function the runtime
 does not implement and names it; `scripts/gen_import_names.py` adds a game's imports to the name
@@ -94,7 +102,7 @@ table.
 
 - **FelipePrado0**: [gow3_pc](https://github.com/FelipePrado0/gow3_pc), the God of War III port
   this project is built on, and its credits: **Supermedo** and **deadinside28** (bloodborne_pc),
-  **cuesta4** (shadPS4 GPU fixes). See [docs/README-gow3.md](docs/README-gow3.md).
+  **cuesta4** (shadPS4 GPU fixes).
 - **shadPS4 team**: the video core, and the PKG format and fake-PKG keysets used by
   `scripts/pkg_extract.py` (`src/core/file_format/pkg.cpp`, `src/core/crypto`) and the NID name
   list (`tools/aerolib.inl`).

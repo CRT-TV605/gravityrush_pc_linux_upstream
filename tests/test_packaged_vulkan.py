@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-spec = importlib.util.spec_from_file_location("gow3_vulkan", ROOT / "launcher/gow3_vulkan.py")
+spec = importlib.util.spec_from_file_location("vulkan_check", ROOT / "launcher/vulkan_check.py")
 vulkan = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vulkan)
 

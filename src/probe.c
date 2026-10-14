@@ -738,7 +738,7 @@ int main(int argc, char **argv) {
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (!cpu_only) {
-        char title[128]="God of War III", serial[16]="UNKNOWN", sfo[4096];
+        char title[128]="PS4 game", serial[16]="UNKNOWN", sfo[4096];
         uint32_t attributes=0;
         snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
         sfo_value(sfo,"TITLE",title,sizeof(title),NULL);
@@ -798,10 +798,15 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
-    if (gpu_enabled) install_orb_multiplier(app0, segments, ns, size);
-    if (gpu_enabled) install_cheats(app0, segments, ns, size);
-    if (gpu_enabled) install_actor_watch(app0, segments, ns, size);
-    if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
+    /* Cheats, multipliers and the health bar hook God of War III's code (CUSA01623) only. */
+    char hooks_sfo[4096], hooks_serial[32]="";
+    snprintf(hooks_sfo,sizeof(hooks_sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+    sfo_value(hooks_sfo,"TITLE_ID",hooks_serial,sizeof(hooks_serial),NULL);
+    const int game_hooks=gpu_enabled && !strcmp(hooks_serial,"CUSA01623");
+    if (game_hooks) install_orb_multiplier(app0, segments, ns, size);
+    if (game_hooks) install_cheats(app0, segments, ns, size);
+    if (game_hooks) install_actor_watch(app0, segments, ns, size);
+    if (game_hooks) install_stat_multipliers(app0, segments, ns, size);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
