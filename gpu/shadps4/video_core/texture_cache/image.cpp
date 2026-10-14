@@ -114,8 +114,57 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     const VkImageCreateInfo image_ci_unsafe = static_cast<VkImageCreateInfo>(image_ci);
     VkImage unsafe_image{};
     VmaAllocationInfo alloc_info{};
-    VkResult result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image,
-                                     &allocation, &alloc_info);
+    // MediEvil: the driver prefers its own memory block for most render targets, and Unreal
+    // Engine 4 reuses its memory for other targets every frame, so the texture cache created and
+    // freed one per image: 16% of the draw recording thread in kernel allocation calls. Images
+    // that only prefer one are placed in VMA's shared blocks (GOW3_IMAGE_SUBALLOC=0: as before).
+    static const bool suballocate = [] {
+        const char* env = std::getenv("GOW3_IMAGE_SUBALLOC");
+        return !env || std::atoi(env) != 0;
+    }();
+    VkResult result = VK_ERROR_UNKNOWN;
+    bool created = false;
+    if (suballocate) {
+        VmaAllocatorInfo allocator_info{};
+        vmaGetAllocatorInfo(allocator, &allocator_info);
+        const VkDevice device = allocator_info.device;
+        if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateImage(device, &image_ci_unsafe, nullptr, &unsafe_image) == VK_SUCCESS) {
+            VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+            VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, &dedicated};
+            const VkImageMemoryRequirementsInfo2 info{VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+                                                      nullptr, unsafe_image};
+            VULKAN_HPP_DEFAULT_DISPATCHER.vkGetImageMemoryRequirements2(device, &info, &requirements);
+            if (!dedicated.requiresDedicatedAllocation) {
+                // vmaAllocateMemory does not take the AUTO usages: ask for device-local memory.
+                VmaAllocationCreateInfo block_ci = alloc_ci;
+                block_ci.usage = VMA_MEMORY_USAGE_UNKNOWN;
+                block_ci.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                result = vmaAllocateMemory(allocator, &requirements.memoryRequirements, &block_ci,
+                                           &allocation, &alloc_info);
+                static u32 failures = 0;
+                if (result != VK_SUCCESS && failures++ < 4) {
+                    std::printf("Texture cache: shared image memory failed (%d), own block used\n",
+                                int(result));
+                }
+                if (result == VK_SUCCESS) {
+                    result = vmaBindImageMemory(allocator, allocation, unsafe_image);
+                    if (result != VK_SUCCESS) {
+                        vmaFreeMemory(allocator, allocation);
+                        allocation = {};
+                    }
+                }
+                created = result == VK_SUCCESS;
+            }
+            if (!created) {
+                VULKAN_HPP_DEFAULT_DISPATCHER.vkDestroyImage(device, unsafe_image, nullptr);
+                unsafe_image = VK_NULL_HANDLE;
+            }
+        }
+    }
+    if (!created) {
+        result = vmaCreateImage(allocator, &image_ci_unsafe, &alloc_ci, &unsafe_image, &allocation,
+                                &alloc_info);
+    }
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};

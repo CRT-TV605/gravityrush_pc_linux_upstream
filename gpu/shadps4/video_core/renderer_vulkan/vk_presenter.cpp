@@ -394,7 +394,15 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         return env ? std::clamp(std::atoi(env), 1, 64) : 1;
     }();
     static int frame_dump_remaining = 0;
-    if (frame_dump_trigger && frame_dump_remaining == 0 && std::remove(frame_dump_trigger) == 0) {
+    // The trigger file is looked for 4 times a second (a remove() per frame cost 1% of the
+    // draw recording thread).
+    static auto next_trigger_check = std::chrono::steady_clock::now();
+    const auto trigger_now = std::chrono::steady_clock::now();
+    const bool check_trigger = frame_dump_trigger && frame_dump_remaining == 0 && trigger_now >= next_trigger_check;
+    if (check_trigger) {
+        next_trigger_check = trigger_now + std::chrono::milliseconds(250);
+    }
+    if (check_trigger && std::remove(frame_dump_trigger) == 0) {
         frame_dump_remaining = frame_dump_count;
     }
     const bool frame_dump = frame_dump_remaining > 0;

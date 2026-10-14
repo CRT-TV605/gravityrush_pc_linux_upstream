@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <mutex>
@@ -160,7 +161,14 @@ void FrameCapture::OnFlip(VAddr presented_address) {
         return;
     }
     bool arm = requested.exchange(false, std::memory_order_acq_rel);
-    if (!arm && trigger && std::filesystem::exists(trigger)) {
+    // The trigger file is looked for 4 times a second, not at every flip.
+    static auto next_check = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const bool check = !arm && trigger && now >= next_check;
+    if (check) {
+        next_check = now + std::chrono::milliseconds(250);
+    }
+    if (check && std::filesystem::exists(trigger)) {
         std::error_code ec;
         std::filesystem::remove(trigger, ec);
         arm = true;
