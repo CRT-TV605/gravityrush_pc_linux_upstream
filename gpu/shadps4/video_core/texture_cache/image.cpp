@@ -117,10 +117,20 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     // MediEvil: the driver prefers its own memory block for most render targets, and Unreal
     // Engine 4 reuses its memory for other targets every frame, so the texture cache created and
     // freed one per image: 16% of the draw recording thread in kernel allocation calls. Images
-    // that only prefer one are placed in VMA's shared blocks (GOW3_IMAGE_SUBALLOC=0: as before).
-    static const bool suballocate = [] {
-        const char* env = std::getenv("GOW3_IMAGE_SUBALLOC");
-        return !env || std::atoi(env) != 0;
+    // that only prefer one are placed in VMA's shared blocks. NVIDIA only by default (measured
+    // there; an AMD driver crashed in a level load, issue #1); GOW3_IMAGE_SUBALLOC=1/0 forces it.
+    static const bool suballocate = [this] {
+        if (const char* env = std::getenv("GOW3_IMAGE_SUBALLOC")) {
+            return std::atoi(env) != 0;
+        }
+        VmaAllocatorInfo info{};
+        vmaGetAllocatorInfo(allocator, &info);
+        VkPhysicalDeviceProperties properties{};
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceProperties(info.physicalDevice, &properties);
+        const bool nvidia = properties.vendorID == 0x10DE;
+        std::printf("Texture cache: shared image memory %s (%s)\n", nvidia ? "on" : "off",
+                    properties.deviceName);
+        return nvidia;
     }();
     VkResult result = VK_ERROR_UNKNOWN;
     bool created = false;

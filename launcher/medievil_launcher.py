@@ -39,7 +39,7 @@ APP_NAME = 'MediEvil'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build. New versions are on the GitHub releases page (the automatic updater is off).
-VERSION = '1.3.0'
+VERSION = '1.3.1'
 RELEASES_API = None
 RELEASES_PAGE = 'https://github.com/bc160201983/medievil_2019_pc_port/releases'
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'medievil-update'
@@ -98,6 +98,7 @@ def run_command():
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import button_icons  # noqa: E402
+import theme  # noqa: E402
 import lang  # noqa: E402
 
 LANG = 'en'
@@ -354,9 +355,52 @@ def game_environment(s):
 # ---------------------------------------------------------------------------------------------
 # The window.
 
-# MediEvil's colors: graveyard night purple, bone white and the ghostly green of its HUD.
-BG, PANEL, CARD, LINE = '#0b0a10', '#13111a', '#1b1824', '#2a2536'
-TEXT, MUTED, ACCENT, ACCENT_HI = '#ebe4d0', '#8d8799', '#3f7d1c', '#76c43a'
+# MediEvil's colors (theme.py): Gallowmere's night purple and stone, bone text, the logo's gold
+# and the green of souls.
+BG, PANEL, CARD, LINE = theme.NIGHT, theme.STONE, theme.CARD, theme.EDGE
+TEXT, MUTED, ACCENT, ACCENT_HI, GOLD = theme.BONE, theme.MIST, theme.SOUL_DARK, theme.SOUL, theme.GOLD
+
+
+class ImageButton:
+    """A button drawn by theme.play_button (normal, hover, disabled), with ttk.Button's
+    configure(text=, state=) and pack()."""
+
+    def __init__(self, parent, tk, fonts, text, command, width, height, bg):
+        self.tk, self.fonts, self.command = tk, fonts, command
+        self.size, self.text, self.state, self.hover = (width, height), text, 'normal', False
+        self.images = {}
+        self.label = tk.Label(parent, bg=bg, bd=0, cursor='hand2', highlightthickness=0)
+        self.label.bind('<Enter>', lambda _e: self._set(hover=True))
+        self.label.bind('<Leave>', lambda _e: self._set(hover=False))
+        self.label.bind('<Button-1>', lambda _e: self.state == 'normal' and self.command())
+        self._draw()
+
+    def _image(self, look):
+        key = (self.text, look)
+        if key not in self.images:
+            from PIL import ImageTk
+            self.images[key] = ImageTk.PhotoImage(theme.play_button(self.fonts, self.text, *self.size, look))
+        return self.images[key]
+
+    def _draw(self):
+        look = 'disabled' if self.state == 'disabled' else 'hover' if self.hover else 'normal'
+        self.label.configure(image=self._image(look), cursor='hand2' if self.state == 'normal' else '')
+
+    def _set(self, hover):
+        self.hover = hover
+        self._draw()
+
+    def configure(self, text=None, state=None):
+        if text is not None:
+            self.text = text
+        if state is not None:
+            self.state = str(state)
+        self._draw()
+
+    config = configure
+
+    def pack(self, **kwargs):
+        self.label.pack(**kwargs)
 RESOLUTION_CHOICES = [('native', ('Native (1080p)',)), ('720p', ('720p (faster)',)),
                       ('1440p', ('1440p',)), ('1800p', ('1800p',)), ('4K', ('4K (sharpest)',)),
                       ('720p_native', ('720p native output',)), ('1440p_native', ('1440p native output',)),
@@ -390,6 +434,8 @@ class Launcher:
                 pass
         root.configure(bg=BG)
         self.dpi = root.winfo_fpixels('1i') / 96.0
+        self.fonts = theme.load_fonts(self.app.get('game_dir'), CONFIG_DIR)
+        self.images = []  # PhotoImages the widgets show (kept alive here)
         root.geometry(f'{self.px(1120)}x{self.px(740)}')
         root.minsize(self.px(980), self.px(660))
         self.set_icon()
@@ -401,6 +447,29 @@ class Launcher:
 
     def px(self, size):
         return int(size * self.dpi)
+
+    def f(self, role, size, *style):
+        """A Tk font: role 'logo', 'head' or 'body' (the game's fonts when available)."""
+        return (self.fonts.family[role], size, *style)
+
+    def photo(self, image):
+        """A Pillow image as a PhotoImage that stays alive with the launcher."""
+        from PIL import ImageTk
+        photo = ImageTk.PhotoImage(image)
+        self.images.append(photo)
+        return photo
+
+    def gold(self, text, size, role='logo', glow=None, max_width=None):
+        """Gold title text as an image (Pillow), or None without Pillow; narrowed to max_width."""
+        try:
+            from PIL import Image
+            image = theme.gold_text(self.fonts, text, self.px(size), role=role, glow=glow)
+        except ImportError:
+            return None
+        if max_width and image.width > self.px(max_width):
+            ratio = self.px(max_width) / image.width
+            image = image.resize((self.px(max_width), max(1, round(image.height * ratio))), Image.LANCZOS)
+        return self.photo(image)
 
     def set_icon(self):
         game_icon = Path(self.var('game_dir', 'app').get() or '.') / 'sce_sys' / 'icon0.png'
@@ -426,9 +495,14 @@ class Launcher:
 
     # ---- look --------------------------------------------------------------------------------
     def check_images(self):
-        """16 px (DPI-scaled) check box images: the clam theme draws a cross."""
+        """16 px (DPI-scaled) check box images: gold frames, green tick (theme.check_box)."""
         tk = self.tk
         n = max(14, int(16 * self.dpi))
+        try:
+            self.check_off, self.check_on = (self.photo(theme.check_box(n, c)) for c in (False, True))
+            return
+        except ImportError:
+            pass
         images = []
         for checked in (False, True):
             image = tk.PhotoImage(width=n + self.px(8), height=n)  # unset pixels stay transparent
@@ -459,7 +533,7 @@ class Launcher:
             ('Bb.indicator', {'side': 'left', 'sticky': ''}),
             ('Checkbutton.focus', {'side': 'left', 'sticky': 'w', 'children': [
                 ('Checkbutton.label', {'sticky': 'nswe'})]})]})])
-        base = ('Segoe UI', 10)
+        base = self.f('body', 10)
         self.root.option_add('*TCombobox*Listbox.background', CARD)
         self.root.option_add('*TCombobox*Listbox.foreground', TEXT)
         self.root.option_add('*TCombobox*Listbox.selectBackground', ACCENT)
@@ -468,9 +542,9 @@ class Launcher:
                     lightcolor=LINE, darkcolor=LINE, troughcolor=CARD, focuscolor=ACCENT, font=base)
         s.configure('TFrame', background=PANEL)
         s.configure('TLabel', background=PANEL, foreground=TEXT)
-        s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
-        s.configure('Restart.TLabel', background=PANEL, foreground=ACCENT_HI, font=('Segoe UI', 8, 'bold'))
-        s.configure('Section.TLabel', background=PANEL, foreground=ACCENT_HI, font=('Georgia', 12))
+        s.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=self.f('body', 9))
+        s.configure('Restart.TLabel', background=PANEL, foreground=ACCENT_HI, font=self.f('body', 8))
+        s.configure('Section.TLabel', background=PANEL, foreground=GOLD, font=self.f('head', 15))
         s.configure('TCheckbutton', background=PANEL, foreground=TEXT, padding=(0, 3))
         s.map('TCheckbutton', background=[('active', PANEL)], foreground=[('disabled', MUTED)])
         s.configure('TRadiobutton', background=PANEL, foreground=TEXT, indicatorcolor=CARD)
@@ -481,14 +555,21 @@ class Launcher:
               selectbackground=[('readonly', CARD)], selectforeground=[('readonly', TEXT)])
         s.configure('TEntry', foreground=TEXT, insertcolor=TEXT, padding=4)
         s.configure('TSpinbox', foreground=TEXT, arrowcolor=MUTED, insertcolor=TEXT, padding=4)
-        s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1)
-        s.map('TButton', background=[('active', LINE), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
+        s.configure('TButton', background=CARD, foreground=TEXT, padding=(12, 6), borderwidth=1,
+                    bordercolor=theme.BRONZE, lightcolor=CARD, darkcolor=CARD)
+        s.map('TButton', background=[('active', '#2e2440'), ('disabled', PANEL)],
+              foreground=[('active', GOLD), ('disabled', MUTED)], bordercolor=[('active', GOLD)])
+        s.map('TCombobox', bordercolor=[('focus', GOLD), ('hover', theme.BRONZE)])
+        s.map('TEntry', bordercolor=[('focus', GOLD)])
         s.configure('Play.TButton', background=ACCENT, foreground='#f4ece0', font=('Georgia', 15, 'bold'),
                     padding=(36, 10), borderwidth=0)
         s.map('Play.TButton', background=[('active', ACCENT_HI), ('disabled', '#1f2a1a')],
               foreground=[('disabled', '#8a7a78')])
-        s.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=CARD, bordercolor=LINE)
-        s.configure('Vertical.TScrollbar', background=CARD, arrowcolor=MUTED, troughcolor=PANEL, bordercolor=PANEL)
+        s.configure('Horizontal.TProgressbar', background=ACCENT_HI, troughcolor=CARD, bordercolor=LINE,
+                    lightcolor=ACCENT_HI, darkcolor=ACCENT)
+        s.configure('Vertical.TScrollbar', background=CARD, arrowcolor=GOLD, troughcolor=PANEL, bordercolor=PANEL,
+                    lightcolor=CARD, darkcolor=CARD)
+        s.map('Vertical.TScrollbar', background=[('active', '#3a2f4a')])
 
     # ---- widget helpers ----------------------------------------------------------------------
     def var(self, key, store):
@@ -517,7 +598,8 @@ class Launcher:
         """A combobox over (value, (english, russian)) pairs, kept in sync with its variable."""
         var = self.var(key, store)
         values = [v for v, _t in options]
-        box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width)
+        box = self.ttk.Combobox(parent, values=[_(*text) for _v, text in options], state='readonly', width=width,
+                                font=self.f('body', 10))
         if var.get() not in values:
             var.set(values[0])
 
@@ -558,17 +640,25 @@ class Launcher:
         self.ttk.Label(parent, text=text, style='Muted.TLabel', wraplength=self.px(680), justify='left').grid(
             row=self.next_row(parent), column=0, columnspan=2, sticky='w', pady=(top, 0))
 
-    def section(self, parent, title, top=20):
+    def section(self, parent, title, top=20, columns=2):
         r = self.next_row(parent)
-        self.ttk.Label(parent, text=title.upper(), style='Section.TLabel').grid(
-            row=r, column=0, columnspan=2, sticky='w', pady=(top, 0))
-        self.tk.Frame(parent, bg=LINE, height=1).grid(row=r + 1, column=0, columnspan=2, sticky='we', pady=(2, 2))
+        self.ttk.Label(parent, text=title, style='Section.TLabel').grid(
+            row=r, column=0, columnspan=columns, sticky='w', pady=(top, 0))
+        self.ornament(parent).grid(row=r + 1, column=0, columnspan=columns, sticky='w', pady=(0, 4))
+
+    def ornament(self, parent):
+        """A heading divider: a gold diamond and a fading line (theme.divider)."""
+        try:
+            image = self.photo(theme.divider(self.px(560), self.px(9)))
+            return self.tk.Label(parent, image=image, bg=PANEL, bd=0)
+        except ImportError:
+            return self.tk.Frame(parent, bg=LINE, height=1, width=self.px(560))
 
     def folder(self, parent, key, title, prompt, hint=None, on_change=None):
         ttk = self.ttk
         var = self.var(key, 'app')
         holder = ttk.Frame(parent)
-        ttk.Entry(holder, textvariable=var, width=46).pack(side='left')
+        ttk.Entry(holder, textvariable=var, width=46, font=self.f('body', 10)).pack(side='left')
 
         def browse():
             chosen = self.filedialog.askdirectory(title=prompt, initialdir=var.get() or str(PORT_DIR))
@@ -587,7 +677,12 @@ class Launcher:
         outer = ttk.Frame(self.content)
         head = ttk.Frame(outer, padding=(28, 22, 28, 6))
         head.pack(fill='x')
-        ttk.Label(head, text=title.upper(), background=PANEL, foreground=TEXT, font=('Georgia', 20)).pack(anchor='w')
+        image = self.gold(title, 30, role='head')
+        if image:
+            tk.Label(head, image=image, bg=PANEL, bd=0).pack(anchor='w', padx=(0, 0))
+        else:
+            ttk.Label(head, text=title.upper(), background=PANEL, foreground=GOLD, font=self.f('logo', 22)).pack(
+                anchor='w')
         ttk.Label(head, text=subtitle, style='Muted.TLabel').pack(anchor='w')
         canvas = tk.Canvas(outer, bg=PANEL, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
@@ -609,38 +704,50 @@ class Launcher:
         side = tk.Frame(self.root, bg=BG, width=self.px(220))
         side.pack(side='left', fill='y')
         side.pack_propagate(False)
-        self.side_title = tk.Label(side, text=APP_NAME.upper(), bg=BG, fg=TEXT, font=('Georgia', 15),
-                                   wraplength=self.px(190), justify='left')
-        self.side_title.pack(anchor='w', padx=22, pady=(24, 22))
+        logo = self.gold(APP_NAME, 54, glow=ACCENT_HI, max_width=205)
+        self.side_title = tk.Label(side, text='' if logo else APP_NAME.upper(), image=logo or '', bg=BG,
+                                   fg=GOLD, font=self.f('logo', 20), bd=0)
+        self.side_title.pack(anchor='center', pady=(22, 4))
+        tk.Label(side, text=_('PC edition'), bg=BG, fg=ACCENT_HI, font=self.f('head', 12), bd=0).pack(
+            anchor='center', pady=(0, 20))
         self.side = side
         self.nav, self.current_page = {}, None
         for name, title in (('home', _('Home')), ('display', _('Display')), ('performance', _('Performance')),
                             ('game', _('Game', 'Игра')), ('patches', _('Patches', 'Патчи')),
                             ('mods', _('Mods', 'Моды')), ('controls', _('Controls', 'Управление')),
                             ('advanced', _('Advanced', 'Дополнительно')), ('log', _('Log', 'Журнал'))):
-            item = tk.Label(side, text='    ' + title, bg=BG, fg=TEXT, anchor='w', font=('Segoe UI', 11),
-                            pady=10, cursor='hand2')
+            item = tk.Label(side, text='    ' + title, bg=BG, fg=TEXT, anchor='w', font=self.f('head', 13),
+                            pady=8, cursor='hand2', bd=0)
+            item.looks = self.nav_images(title)
+            if item.looks:
+                item.configure(text='', image=item.looks['normal'], pady=0)
             item.pack(fill='x')
             item.bind('<Button-1>', lambda _e, n=name: self.show(n))
-            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg='#18151f'))
-            item.bind('<Leave>', lambda _e, n=name: n != self.current_page and self.nav[n].configure(bg=BG))
+            item.bind('<Enter>', lambda _e, n=name: n != self.current_page and self.nav_look(n, 'hover'))
+            item.bind('<Leave>', lambda _e, n=name: n != self.current_page and self.nav_look(n, 'normal'))
             self.nav[name] = item
         tk.Frame(side, bg=BG).pack(fill='both', expand=True)
         self.update_box = None
         self.side_note = tk.Label(side, text=_('In the game: Insert or R3+L2\nopens the port\'s menu.',
                                                'В игре: Insert или R3+L2\nоткрывает меню порта.'),
-                                  bg=BG, fg=MUTED, font=('Segoe UI', 9), justify='left', wraplength=self.px(210))
+                                  bg=BG, fg=MUTED, font=self.f('body', 9), justify='left', wraplength=self.px(210))
         self.side_note.pack(anchor='w', padx=22, pady=(0, 18))
 
         right = tk.Frame(self.root, bg=PANEL)
         right.pack(side='left', fill='both', expand=True)
-        bar = tk.Frame(right, bg=BG, height=72)
+        bar = tk.Frame(right, bg=BG, height=self.px(80))
         bar.pack(fill='x', side='bottom')
         bar.pack_propagate(False)
-        self.status = tk.Label(bar, text='', bg=BG, fg=MUTED, font=('Segoe UI', 10), anchor='w', justify='left')
+        tk.Frame(right, bg=theme.BRONZE, height=1).pack(fill='x', side='bottom')
+        self.status = tk.Label(bar, text='', bg=BG, fg=MUTED, font=self.f('body', 10), anchor='w', justify='left')
         self.status.pack(side='left', padx=24)
-        self.play_button = ttk.Button(bar, text=_('PLAY', 'ИГРАТЬ'), style='Play.TButton', command=self.play)
-        self.play_button.pack(side='right', padx=(10, 24), pady=11)
+        try:
+            self.play_button = ImageButton(bar, tk, self.fonts, _('PLAY', 'ИГРАТЬ'), self.play,
+                                           self.px(230), self.px(66), BG)
+            self.play_button.pack(side='right', padx=(10, 18), pady=self.px(6))
+        except ImportError:
+            self.play_button = ttk.Button(bar, text=_('PLAY', 'ИГРАТЬ'), style='Play.TButton', command=self.play)
+            self.play_button.pack(side='right', padx=(10, 24), pady=11)
         self.content = tk.Frame(right, bg=PANEL)
         self.content.pack(fill='both', expand=True)
 
@@ -658,6 +765,46 @@ class Launcher:
         self.root.bind_all('<MouseWheel>', self.wheel)
         self.game_changed()
 
+    def nav_images(self, title):
+        """A menu item drawn in the game's menu font: normal, hover and selected (soul glow)."""
+        try:
+            from PIL import Image
+        except ImportError:
+            return None
+        w, h = self.px(220), self.px(42)
+        looks = {}
+        for look, color in (('normal', TEXT), ('hover', GOLD), ('selected', GOLD)):
+            img = Image.new('RGBA', (w, h), theme._hex(BG))
+            if look == 'selected':
+                img.alpha_composite(theme.sidebar_glow(w, h))
+            text = theme.gold_text(self.fonts, title, self.px(19), role='head', glow=None, outline=1) \
+                if look != 'normal' else self.plain_text(title, self.px(19), color)
+            img.alpha_composite(text, (self.px(18), (h - text.height) // 2))
+            looks[look] = self.photo(img)
+        return looks
+
+    def plain_text(self, text, size, color):
+        """Text in the game's menu font, one color, with a soft shadow (Pillow)."""
+        from PIL import Image, ImageDraw, ImageFilter
+        font = theme._font(self.fonts, 'head', size)
+        box = ImageDraw.Draw(Image.new('L', (1, 1))).textbbox((0, 0), text, font=font)
+        pad = max(4, size // 5)
+        w, h = box[2] - box[0] + 2 * pad, box[3] - box[1] + 2 * pad
+        out = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+        shadow = Image.new('L', (w, h), 0)
+        ImageDraw.Draw(shadow).text((pad - box[0] + 1, pad - box[1] + 2), text, font=font, fill=200)
+        out.paste((0, 0, 0, 255), (0, 0), shadow.filter(ImageFilter.GaussianBlur(1.5)))
+        ImageDraw.Draw(out).text((pad - box[0], pad - box[1]), text, font=font, fill=theme._hex(color))
+        return out
+
+    def nav_look(self, name, look):
+        item = self.nav[name]
+        if item.looks:
+            item.configure(image=item.looks[look])
+        else:
+            item.configure(bg=PANEL if look == 'selected' else '#1c1628' if look == 'hover' else BG,
+                           fg=GOLD if look != 'normal' else TEXT)
+
     def wheel(self, event):
         page = self.pages.get(self.current_page)
         if hasattr(page, 'scroll') and not isinstance(event.widget, (self.tk.Text, self.ttk.Combobox)) \
@@ -669,8 +816,8 @@ class Launcher:
             page.pack_forget()
         self.pages[name].pack(fill='both', expand=True)
         self.current_page = name
-        for n, item in self.nav.items():
-            item.configure(bg=PANEL if n == name else BG, fg=ACCENT_HI if n == name else TEXT)
+        for n in self.nav:
+            self.nav_look(n, 'selected' if n == name else 'normal')
         if name in ('mods', 'patches'):
             self.refresh_lists()
         if name == 'patches':
@@ -684,16 +831,14 @@ class Launcher:
         tk, ttk = self.tk, self.ttk
         page = tk.Frame(self.content, bg=PANEL)
         self.pages['home'] = page
-        self.banner = tk.Canvas(page, height=self.px(330), bg=BG, highlightthickness=0, bd=0)
+        self.banner = tk.Canvas(page, height=self.px(390), bg=BG, highlightthickness=0, bd=0)
         self.banner.pack(fill='x')
         self.banner.bind('<Configure>', lambda _e: self.draw_banner())
         self.banner_button = ttk.Button(self.banner, text=_('Choose the game or its .pkg'),
                                         command=lambda: self.show('game'))
         quick = ttk.Frame(page, padding=(28, 14, 28, 8))
         quick.pack(fill='x')
-        ttk.Label(quick, text=_('Quick settings', 'Основное').upper(), style='Section.TLabel').grid(
-            row=0, column=0, columnspan=4, sticky='w')
-        tk.Frame(quick, bg=LINE, height=1).grid(row=1, column=0, columnspan=4, sticky='we', pady=(2, 6))
+        self.section(quick, _('Quick settings', 'Основное'), top=0, columns=4)
         items = ((_('Display mode'), 'display_mode', 'ini', DISPLAY_MODES),
                  (_('Frame rate limit'), 'fps_limit', 'ini', FPS_LIMITS),
                  (_('Render resolution'), 'render_resolution', 'ini', RESOLUTION_CHOICES),
@@ -701,6 +846,7 @@ class Launcher:
         for index, (title, key, store, options) in enumerate(items):
             r, c = 2 + index // 2, (index % 2) * 2
             ttk.Label(quick, text=title).grid(row=r, column=c, sticky='w', pady=6, padx=(0, 12))
+            quick.grid_rowconfigure(r, minsize=self.px(34))
             self.choice(quick, key, store, options, width=18).grid(row=r, column=c + 1, sticky='w', padx=(0, 40))
         flags = ttk.Frame(quick)
         flags.grid(row=4, column=0, columnspan=4, sticky='w', pady=(6, 0))
@@ -722,31 +868,32 @@ class Launcher:
             except (tk.TclError, OSError):
                 pass
         if self.banner_image:
-            if self.banner_size != w:
-                self.banner_size, self.banner_scaled = w, self.scaled_art(art, w)
-            # The logo sits in the upper half of the cover: show that part.
-            c.create_image(w // 2, int(h * 0.62), image=self.banner_scaled)
-            for i, stipple in enumerate(('gray12', 'gray25', 'gray50', 'gray75')):
-                c.create_rectangle(0, h - 120 + i * 24, w, h - 96 + i * 24, fill=PANEL, outline='', stipple=stipple)
-            c.create_rectangle(0, h - 24, w, h, fill=PANEL, outline='')
+            if self.banner_size != (w, h):
+                self.banner_size, self.banner_scaled = (w, h), self.scaled_art(art, w, h)
+            c.create_image(0, 0, image=self.banner_scaled, anchor='nw')
         else:
-            c.create_text(30, h - 74, text=APP_NAME.upper(), anchor='w', fill=TEXT, font=('Georgia', 32))
+            logo = self.gold(APP_NAME, 56, glow=ACCENT_HI)
+            if logo:
+                c.create_image(w // 2, h // 2 - self.px(30), image=logo)
+            else:
+                c.create_text(30, h - 74, text=APP_NAME.upper(), anchor='w', fill=GOLD, font=self.f('logo', 32))
         if info:
             title_id = game_profile_of(folder)[0]
             sub = _('{} · version {}', '{} · версия {}').format(title_id or '?', info[1])
-            c.create_text(33, h - 30, text=sub, anchor='w', fill=ACCENT_HI, font=('Segoe UI', 11, 'bold'))
+            c.create_text(34, h - 26, text=sub, anchor='w', fill='#000000', font=self.f('head', 14))
+            c.create_text(33, h - 28, text=sub, anchor='w', fill=ACCENT_HI, font=self.f('head', 14))
         else:
-            c.create_text(w // 2, h // 2 - 40, text=_('Choose your game folder to play.'),
-                          fill=TEXT, font=('Segoe UI', 12))
-            c.create_window(w // 2, h // 2, window=self.banner_button)
+            c.create_text(w // 2, h // 2 + self.px(20), text=_('Choose your game folder to play.'),
+                          fill=TEXT, font=self.f('body', 12))
+            c.create_window(w // 2, h // 2 + self.px(60), window=self.banner_button)
 
-    def scaled_art(self, path, width):
-        """The cover art scaled to `width`: Pillow (smooth) or Tk's integer subsampling."""
+    def scaled_art(self, path, width, height):
+        """The cover art filling width x height and fading into the page (theme.banner_fade), or
+        Tk's integer subsampling without Pillow."""
         try:
             from PIL import Image, ImageTk
             with Image.open(path) as image:
-                height = round(image.height * width / image.width)
-                return ImageTk.PhotoImage(image.convert('RGB').resize((width, height), Image.LANCZOS))
+                return ImageTk.PhotoImage(theme.banner_fade(image, width, height, PANEL))
         except (ImportError, OSError):
             factor = max(1, round(self.banner_image.width() / max(width, 1)))
             return self.banner_image.subsample(factor) if factor > 1 else self.banner_image
@@ -1126,7 +1273,7 @@ class Launcher:
             ttk.Label(table, text=PS_BUTTON_NAMES[button], width=14).grid(row=r, column=1, sticky='w', padx=(0, 12))
             key_var = tk.StringVar(value=saved.get('key', {}).get(button) or key)
             self.control_vars['key'][button] = key_var
-            ttk.Entry(table, textvariable=key_var, width=16).grid(row=r, column=2, sticky='w', padx=(0, 18))
+            ttk.Entry(table, textvariable=key_var, width=16, font=self.f('body', 10)).grid(row=r, column=2, sticky='w', padx=(0, 18))
             pad_name = saved.get('pad', {}).get(button) or pad
             pad_var = tk.StringVar(value=pad_name or '')
             self.control_vars['pad'][button] = pad_var
@@ -1233,10 +1380,14 @@ class Launcher:
         self.pages['log'] = page
         top = ttk.Frame(page)
         top.pack(fill='x', pady=(0, 8))
-        ttk.Label(top, text=_('Log', 'Журнал').upper(), font=('Georgia', 20)).pack(side='left')
+        image = self.gold(_('Log', 'Журнал'), 30, role='head')
+        if image:
+            tk.Label(top, image=image, bg=PANEL, bd=0).pack(side='left')
+        else:
+            ttk.Label(top, text=_('Log', 'Журнал').upper(), foreground=GOLD, font=self.f('logo', 22)).pack(side='left')
         ttk.Button(top, text=_('Copy', 'Копировать'), command=self.copy_log).pack(side='right')
         ttk.Button(top, text=_('Clear', 'Очистить'), command=lambda: self.set_log('')).pack(side='right', padx=6)
-        self.log = tk.Text(page, wrap='none', bg='#08070c', fg='#cfd6c4', insertbackground=TEXT, relief='flat',
+        self.log = tk.Text(page, wrap='none', bg='#0a0810', fg='#d8e8c8', insertbackground=TEXT, relief='flat',
                            font=('Consolas', 9), padx=8, pady=6, state='disabled', highlightthickness=0)
         bar = ttk.Scrollbar(page, command=self.log.yview)
         self.log.configure(yscrollcommand=bar.set)
@@ -1578,8 +1729,8 @@ class Launcher:
             return
         tk, ttk = self.tk, self.ttk
         text = _('Version {} is available.', 'Доступна версия {}.').format(version)
-        box = tk.Frame(self.side, bg=CARD, highlightthickness=1, highlightbackground=ACCENT)
-        self.update_label = tk.Label(box, text=text, bg=CARD, fg=TEXT, font=('Segoe UI', 10, 'bold'),
+        box = tk.Frame(self.side, bg=CARD, highlightthickness=1, highlightbackground=GOLD)
+        self.update_label = tk.Label(box, text=text, bg=CARD, fg=GOLD, font=self.f('head', 12),
                                      wraplength=self.px(160), justify='left')
         self.update_label.pack(anchor='w', padx=10, pady=(8, 6))
         buttons = tk.Frame(box, bg=CARD)

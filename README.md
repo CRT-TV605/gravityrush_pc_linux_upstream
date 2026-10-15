@@ -24,6 +24,8 @@ Captured on Windows 11 (RTX 5080) with this port.
 ## What works
 
 - Boot, intro movies, menus and gameplay (tested on an RTX 5080, a 1080p 200 Hz monitor and a 4K TV).
+- **Intel and AMD CPUs**: the game's few AMD-only SSE4a instructions (`INSERTQ`) are replaced with
+  SSE2 code on CPUs without them (all Intel CPUs), and any other one is emulated.
 - **Above 60 FPS**: Engine frame rate 120 or 240 (launcher > Performance, or the in-game menu) lifts
   the PS4 game's 60 FPS cap. The cap is Unreal Engine 4's console frame-rate ceiling
   (`SmoothedFrameRateRange`, applied with VSync on), raised by the config override pak; game speed
@@ -49,8 +51,9 @@ Captured on Windows 11 (RTX 5080) with this port.
   High and Ultra (sharper, longer-range shadows, better reflections and more distant detail).
   Every preset keeps point/spot light shadows at one fixed size, which stops the shadow flicker
   while moving, and limits shadow draws so busy outdoor scenes stay near 60 FPS.
-- **Launcher** in MediEvil's colors: home with cover art and quick settings, display, performance,
-  game folder / PKG install / save backups, patches, mods, controls, diagnostics and log.
+- **Launcher** in MediEvil's style: Gallowmere's colors and the game's own fonts (read from your
+  copy of the game, never shipped), with home and cover art, display, performance, game folder /
+  PKG install / save backups, cheats, patches, mods, controls, diagnostics and log.
 - **In-game menu** (Insert, or R3+L2): image (display mode, VSync, FSR 1, sharpening),
   performance and the performance overlay.
 - Online features (PSN) answer as a console that is not signed in.

@@ -173,6 +173,11 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
             return EXCEPTION_CONTINUE_EXECUTION;
         }
     }
+    /* SSE4a (EXTRQ/INSERTQ) in guest code on a CPU without it (Intel): emulated (runtime_sse4a.c). */
+    if (code==EXCEPTION_ILLEGAL_INSTRUCTION && image &&
+        (uintptr_t)info->ContextRecord->Rip-(uintptr_t)image<0x20000000 &&
+        runtime_sse4a_emulate(info->ContextRecord))
+        return EXCEPTION_CONTINUE_EXECUTION;
     if (code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_ILLEGAL_INSTRUCTION || code==EXCEPTION_PRIV_INSTRUCTION ||
         code==EXCEPTION_STACK_OVERFLOW || code==EXCEPTION_INT_DIVIDE_BY_ZERO || code==EXCEPTION_DATATYPE_MISALIGNMENT) {
         /* Faults in guest code, the loader or the runtime end the process with a report; drivers
@@ -800,6 +805,10 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+    /* AMD-only SSE4a instructions in the game: SSE2 trampolines on CPUs without them. */
+    unsigned char *sse4a_stubs = allocate(page_size);
+    runtime_sse4a_install(image, size, sse4a_stubs, page_size);
+    protect(sse4a_stubs, page_size, 5);
     /* Cheats, multipliers and the health bar hook God of War III's code (CUSA01623) only. */
     char hooks_sfo[4096], hooks_serial[32]="";
     snprintf(hooks_sfo,sizeof(hooks_sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
