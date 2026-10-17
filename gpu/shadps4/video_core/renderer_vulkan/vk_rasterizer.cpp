@@ -2046,13 +2046,18 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
     const u64 alignment = instance.StorageMinAlignment();
     // GOW3_SHADOW_CB_TRACE=1: constants of the shaders that read a shadow map (a square layered
     // texture of 2048 or more), a few times per shader.
-    static const bool shadow_cb_trace = std::getenv("GOW3_SHADOW_CB_TRACE") != nullptr;
+    static const bool shadow_cb_trace = std::getenv("GOW3_SHADOW_CB_TRACE") != nullptr ||
+                                        std::getenv("GOW3_VIDEO_CB_TRACE") != nullptr;
     if (shadow_cb_trace) {
         static std::unordered_map<u64, u32> seen;
         for (const auto& res : stage.images) {
             const auto image = res.GetSharp(stage);
             const u32 w = u32(image.width) + 1, h = u32(image.height) + 1;
-            if (w != h || w < 2048 || image.NumLayers() < 2 || seen[stage.pgm_hash] >= 2) {
+            // GOW3_VIDEO_CB_TRACE: the same for shaders reading a 1920x1080 image (video frames).
+            static const bool video_cb = std::getenv("GOW3_VIDEO_CB_TRACE") != nullptr;
+            const bool shadow_like = w == h && w >= 2048 && image.NumLayers() >= 2;
+            const bool video_like = video_cb && w == 1920 && h == 1080;
+            if (!(shadow_like || video_like) || seen[stage.pgm_hash] >= 2) {
                 continue;
             }
             ++seen[stage.pgm_hash];
@@ -2879,9 +2884,18 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     }
     // GOW3_VIEWPORT_TRACE: the pass's first target, for viewports smaller than it.
     traced_target = {};
-    if (cb_descs[0].first) {
-        const auto& info = texture_cache.GetImage(cb_descs[0].first).info;
-        traced_target = {info.guest_address, info.size.width, info.size.height};
+    state_colors = state.num_color_attachments;
+    for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
+        if (cb_descs[cb].first) {
+            const auto& info = texture_cache.GetImage(cb_descs[cb].first).info;
+            traced_target = {info.guest_address, info.size.width, info.size.height};
+            break;
+        }
+    }
+    traced_depth = {};
+    if (db_desc.first) {
+        const auto& info = texture_cache.GetImage(db_desc.first).info;
+        traced_depth = {info.guest_address, info.size.width, info.size.height};
     }
     for (u32 cb = state.num_color_attachments; cb < state.color_attachments.size(); ++cb) {
         state.color_attachments[cb] = {};
@@ -3036,15 +3050,46 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         }
     }
 
-    // Gravity Rush's high shadow quality (patch "Shadow Quality - 4096") enlarges only the shadow
-    // map: the game still sets 2048-based cascade viewports, scaled here for the passes into it,
-    // so the game's own viewport state (inherited by later 2D draws) stays as in the original.
-    if (db_desc.first && target_scale[0] == 1.0f) {
+    // Gravity Rush's shadow cascades are drawn with a 2048x2048 viewport; with "Shadow Quality -
+    // 4096" the map is larger and the passes into it (no color target) are scaled to its size.
+    bool has_color = false;
+    for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
+        has_color |= bool(state.color_attachments[cb].image_view);
+    }
+    if (db_desc.first && !has_color && target_scale[0] == 1.0f) {
         const auto& depth_info = texture_cache.GetImage(db_desc.first).info;
-        if (depth_info.size.width == depth_info.size.height && depth_info.size.width > 2048 &&
-            depth_info.resources.layers == 4) {
-            const float scale = float(depth_info.size.width) / 2048.0f;
+        const float game_width = 2.0f * std::abs(regs.viewports[0].xscale);
+        if (depth_info.size.width == depth_info.size.height && depth_info.size.width >= 2048 &&
+            game_width >= 1024.0f && float(depth_info.size.width) != game_width) {
+            const float scale = float(depth_info.size.width) / game_width;
             target_scale = {scale, scale};
+        }
+    }
+
+    // GOW3_PASS_TRACE: passes drawn with a 2048- or 4096-wide viewport (shadows, the 2D layer).
+    static const bool pass_trace = std::getenv("GOW3_PASS_TRACE") != nullptr;
+    if (pass_trace) {
+        const auto& vp = regs.viewports[0];
+        const int vw = int(2.0f * std::abs(vp.xscale));
+        if (vw == 2048 || vw == 4096) {
+            static std::set<std::string> seen_passes;
+            std::string line = fmt::format("Pass: vp {} ts {} colors {}:", vw, target_scale[0],
+                                           regs.color_control.mode == AmdGpu::ColorControl::OperationMode::Disable ? -1 : int(state.num_color_attachments));
+            for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+                if (cb_descs[cb].first) {
+                    const auto& info = texture_cache.GetImage(cb_descs[cb].first).info;
+                    line += fmt::format(" cb{}={}x{}", cb, info.size.width, info.size.height);
+                }
+            }
+            if (db_desc.first) {
+                const auto& info = texture_cache.GetImage(db_desc.first).info;
+                line += fmt::format(" depth={}x{}x{}", info.size.width, info.size.height, info.resources.layers);
+            }
+            line += fmt::format(" attached_colors={} att0={}", state.num_color_attachments,
+                                bool(state.color_attachments[0].image_view));
+            if (seen_passes.size() < 60 && seen_passes.insert(line).second) {
+                std::printf("%s\n", line.c_str());
+            }
         }
     }
 
@@ -3312,6 +3357,17 @@ void Rasterizer::UpdateViewportScissorState() const {
 
     const auto& vp_ctl = regs.viewport_control;
     static const bool viewport_trace = std::getenv("GOW3_VIEWPORT_TRACE") != nullptr;
+    if (viewport_trace) {  // every distinct target size / viewport pair
+        static std::set<std::array<s64, 7>> seen_all;
+        const auto& vp = regs.viewports[0];
+        const std::array<s64, 7> key{s64(traced_target.width), s64(traced_target.height), s64(2.0f * std::abs(vp.xscale)),
+                                     s64(2.0f * std::abs(vp.yscale)), s64(vp.xoffset - std::abs(vp.xscale)),
+                                     s64(vp.yoffset - std::abs(vp.yscale)), s64(regs.IsClipDisabled())};
+        if (seen_all.size() < 400 && seen_all.insert(key).second) {
+            std::printf("AllVP: %lldx%lld vp %lldx%lld at %lld,%lld clipoff %lld target %#llx\n", key[0], key[1], key[2],
+                        key[3], key[4], key[5], key[6], (unsigned long long)traced_target.address);
+        }
+    }
     if (viewport_trace && traced_target.width >= 64 && !regs.IsClipDisabled()) {
         const auto& vp = regs.viewports[0];
         const float vw = 2.0f * std::abs(vp.xscale), vh = 2.0f * std::abs(vp.yscale);
@@ -3430,20 +3486,65 @@ void Rasterizer::UpdateViewportScissorState() const {
             viewport.y = (yoffset - yscale) * target_scale[1] + draw_jitter[1];
             viewport.width = xscale * 2.0f * target_scale[0];
             viewport.height = yscale * 2.0f * target_scale[1];
+            static const bool layer_trace = std::getenv("GOW3_VIEWPORT_TRACE") != nullptr;
+            if (layer_trace && std::abs(xscale - 1024.0f) < 1.0f) {
+                static std::set<std::string> seen_layer;
+                const bool display_target = traced_target.width > 0 && FrameCapture::IsDisplayBuffer(traced_target.address);
+                std::string line = fmt::format("Layer2D: target {:#x} {}x{} display {} vp {:.3f},{:.3f} off {:.3f},{:.3f} ts {}",
+                                               traced_target.address, traced_target.width, traced_target.height,
+                                               display_target, xscale, yscale, xoffset, yoffset, target_scale[0]);
+                if (seen_layer.size() < 40 && seen_layer.insert(line).second) {
+                    std::printf("%s\n", line.c_str());
+                }
+            }
         }
 
         viewports.push_back(viewport);
 
         auto vp_scsr = scsr;
         if (regs.mode_control.vport_scissor_enable) {
-            vp_scsr.top_left_x =
-                std::max(vp_scsr.top_left_x, s16(regs.viewport_scissors[i].top_left_x));
-            vp_scsr.top_left_y =
-                std::max(vp_scsr.top_left_y, s16(regs.viewport_scissors[i].top_left_y));
-            vp_scsr.bottom_right_x = std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_x),
-                                              regs.viewport_scissors[i].bottom_right_x);
-            vp_scsr.bottom_right_y = std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_y),
-                                              regs.viewport_scissors[i].bottom_right_y);
+            auto vs = regs.viewport_scissors[i];
+            s32 vx0 = vs.top_left_x, vy0 = vs.top_left_y, vx1 = vs.bottom_right_x, vy1 = vs.bottom_right_y;
+            vp_scsr.top_left_x = std::max(vp_scsr.top_left_x, s16(vx0));
+            vp_scsr.top_left_y = std::max(vp_scsr.top_left_y, s16(vy0));
+            vp_scsr.bottom_right_x =
+                std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_x), u16(std::clamp(vx1, 0, 16384)));
+            vp_scsr.bottom_right_y =
+                std::min(AmdGpu::Scissor::Clamp(vp_scsr.bottom_right_y), u16(std::clamp(vy1, 0, 16384)));
+        }
+        if (FrameCapture::Active() && i == 0) {  // the analyzer: each pass's viewports and scissors
+            static std::string last_note;
+            const auto& vq = regs.viewports[0];
+            const auto& vsc = regs.viewport_scissors[0];
+            std::string note = fmt::format("[vp {:.0f}x{:.0f}@{:.0f},{:.0f} vs{} {},{}-{},{} cm{:x} {}]", 2.0f * std::abs(vq.xscale),
+                                           2.0f * std::abs(vq.yscale), vq.xoffset - std::abs(vq.xscale),
+                                           vq.yoffset - std::abs(vq.yscale), int(regs.mode_control.vport_scissor_enable),
+                                           vsc.top_left_x, vsc.top_left_y, vsc.bottom_right_x, vsc.bottom_right_y,
+                                           u32(regs.color_target_mask.raw), regs.IsClipDisabled() ? "clipoff" : "");
+            if (note != last_note) {
+                last_note = note;
+                FrameCapture::Note(note.c_str());
+            }
+        }
+        // GOW3_VIEWPORT_TRACE: every distinct draw state into a display buffer.
+        static const bool display_trace = std::getenv("GOW3_VIEWPORT_TRACE") != nullptr;
+        if (display_trace && i == 0 && traced_target.width >= 1280 &&
+            traced_target.width * 9 == traced_target.height * 16) {
+            static std::set<std::string> seen_display;
+            const auto& vs = regs.viewports[0];
+            const auto& vsc = regs.viewport_scissors[0];
+            std::string line = fmt::format(
+                "DispDraw: {:#x} {} {}x{} vp scale {:.2f},{:.2f} off {:.2f},{:.2f} vpscissor {} {},{}-{},{} screen {},{}-{},{} "
+                "final {},{} {}x{} ts {} widen {:.3f} clipoff {}",
+                traced_target.address, FrameCapture::IsDisplayBuffer(traced_target.address) ? "display" : "offscreen",
+                traced_target.width, traced_target.height, vs.xscale, vs.yscale, vs.xoffset, vs.yoffset,
+                int(regs.mode_control.vport_scissor_enable), vsc.top_left_x, vsc.top_left_y, vsc.bottom_right_x,
+                vsc.bottom_right_y, scsr.top_left_x, scsr.top_left_y, scsr.bottom_right_x, scsr.bottom_right_y,
+                vp_scsr.top_left_x, vp_scsr.top_left_y, vp_scsr.GetWidth(), vp_scsr.GetHeight(), target_scale[0],
+                1.0f, int(regs.IsClipDisabled()));
+            if (seen_display.size() < 150 && seen_display.insert(line).second) {
+                std::printf("%s\n", line.c_str());
+            }
         }
         if (target_scale[0] != 1.0f || target_scale[1] != 1.0f) {
             const auto scale = [](s32 v, float f) { return s32(std::lround(float(v) * f)); };
