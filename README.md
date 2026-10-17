@@ -80,7 +80,7 @@ Not done yet / known gaps:
 
 ## Playing the preview
 
-1. Download `gravityrush-windows.zip` from [Releases](https://github.com/LucaPazienza/gravityrush_pc/releases)
+1. Download the Windows zip from [Releases](https://github.com/LucaPazienza/gravityrush_pc/releases)
    and extract it anywhere (not inside the zip).
 2. Open **Gravity Rush Launcher.exe** (Windows may warn that the program is not signed: More info,
    Run anyway), choose your game folder on the Game page and press **Play**.

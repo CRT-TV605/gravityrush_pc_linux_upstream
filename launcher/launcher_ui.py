@@ -27,7 +27,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 # the launcher folder beside the executable.
 HERE = Path(sys.executable).resolve().parent / 'launcher' if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 FONT_FILE = HERE / 'fonts' / 'Cabin.ttf'
-BACKGROUND = HERE / 'assets' / 'background.png'   # the player's own picture, never in the repository
+BACKGROUND = HERE / 'assets' / 'background.png'   # a player's own picture (optional, never in the repository)
+DEFAULT_BACKGROUND = HERE / 'background.jpg'      # the launcher's own picture (no game characters)
 
 # Design size (DESIGN-launcher.md); everything is scaled from it.
 W, H = 1120, 700
@@ -665,10 +666,12 @@ class Painter:
         return self.done(img)
 
     def background(self, width, height):
-        """The player's picture covering width x height (or a dusk gradient without it)."""
+        """The background covering width x height: a player's own picture, else the launcher's,
+        else a dusk gradient."""
         w, h = self.px(width), self.px(height)
         try:
-            with Image.open(BACKGROUND) as source:
+            source_path = BACKGROUND if BACKGROUND.is_file() else DEFAULT_BACKGROUND
+            with Image.open(source_path) as source:
                 pic = source.convert('RGB')
             scale = max(w / pic.width, h / pic.height)
             return pic.resize((math.ceil(pic.width * scale), math.ceil(pic.height * scale)), Image.LANCZOS)
