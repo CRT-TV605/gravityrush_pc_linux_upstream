@@ -55,10 +55,10 @@ SHADOW_TEXEL = 0x104d310
 SHADOW_CALL = 0x274e4d          # call 0x137b0 (set viewport)
 SHADOW_VIEWPORT = 0x137b0
 SHADOW_CAVE = 0x6dd51           # 15 bytes of padding after a ret
-# Not offered yet: with the viewports scaled the first cascade is right (Kat's shadow), but the
-# farther ones lose shadows (the statue's in the fountain square, 17 Oct 2026). The texel constant
-# must stay 1/2048: the shaders also turn 2048-based pixel positions into texture coordinates with it.
-SHADOW_SIZES = {}  # {'4096': 4096}
+# Checked on 17 Oct 2026: all four cascades draw into the whole map (GOW3_SHADOW_TRACE) and the
+# shaders' constants are unchanged (GOW3_SHADOW_CB_TRACE). The constant at 0x104d310 must stay
+# 1/2048: the shaders also turn 2048-based positions into texture coordinates with it.
+SHADOW_SIZES = {'4096': 4096}
 
 
 def shadow_writes(size):

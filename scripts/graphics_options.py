@@ -14,9 +14,12 @@ RESOLUTIONS = ('native', '480p', '720p', '1440p', '1800p', '4K',
                '720p_native', '1440p_native', '1800p_native', '4K_native')
 ENGINE_FPS = (60, 120, 240)
 DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
-            'stale_readback': '1', 'async_shaders': '1'}
+            'stale_readback': '1', 'async_shaders': '1', 'shadow_quality': 'standard'}
 RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'
+SHADOW_PREFIX = 'Shadow Quality'
+# gravityrush.ini shadow_quality -> shadow map patch (patches/CUSA01113.xml); standard is the game's.
+SHADOW_PATCHES = {'high': 'Shadow Quality - 4096'}
 TEXTURE_FIX = 'Bug Fix - Texture Corruption Fix'
 
 
@@ -57,6 +60,8 @@ def startup_options(ini):
     options = {key: ini.get(key, value) for key, value in DEFAULTS.items()}
     if options['render_resolution'] not in RESOLUTIONS:
         options['render_resolution'] = 'native'
+    if options['shadow_quality'] not in SHADOW_PATCHES:
+        options['shadow_quality'] = 'standard'
     if options['engine_fps'] not in {str(f) for f in ENGINE_FPS}:
         options['engine_fps'] = '60'
     for key in ('deferred_readback', 'stale_readback', 'async_shaders'):
@@ -91,12 +96,14 @@ def prepare(config, state_path):
 
 def patch_names(names, options, texture_fix_available=True):
     """The launcher's patch list with the resolution and frame rate patches of `options`."""
-    names = [n for n in names if not n.startswith(RESOLUTION_PREFIX) and not n.startswith(FPS_PREFIX)]
+    names = [n for n in names if not n.startswith((RESOLUTION_PREFIX, FPS_PREFIX, SHADOW_PREFIX))]
     resolution = options['render_resolution']
     if resolution != 'native':
         names = [n for n in names if n != TEXTURE_FIX] + [f'{RESOLUTION_PREFIX} - {resolution}']
     elif texture_fix_available and TEXTURE_FIX not in names:
         names.insert(0, TEXTURE_FIX)
+    if shadow := SHADOW_PATCHES.get(options.get('shadow_quality')):
+        names.append(shadow)
     if options['engine_fps'] != '60':
         names.append(f'{FPS_PREFIX} - {options["engine_fps"]} FPS')
     return names

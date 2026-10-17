@@ -103,6 +103,14 @@ _ROWS = [
     ('FPS limit', 'Limite FPS', 'Limite d\'IPS', 'FPS-Limit', 'Límite de FPS'),
     ('Unlimited', 'Libero', 'Illimité', 'Unbegrenzt', 'Sin límite'),
     ('IMAGE', 'IMMAGINE', 'IMAGE', 'BILD', 'IMAGEN'),
+    ('Shadow quality', 'Qualità ombre', 'Qualité des ombres', 'Schattenqualität', 'Calidad de sombras'),
+    ('Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Estándar (2048)'),
+    ('High (4096)', 'Alta (4096)', 'Élevée (4096)', 'Hoch (4096)', 'Alta (4096)'),
+    ('Sharper shadow edges and fewer jagged lines. Uses 256 MB of video memory.',
+     'Bordi delle ombre più definiti e meno scalettati. Usa 256 MB di memoria video.',
+     'Bords des ombres plus nets et moins crénelés. Utilise 256 Mo de mémoire vidéo.',
+     'Schärfere Schattenkanten mit weniger Treppenstufen. Belegt 256 MB Grafikspeicher.',
+     'Bordes de sombra más definidos y menos dentados. Usa 256 MB de memoria de vídeo.'),
     ('Anisotropic filtering', 'Filtro anisotropico', 'Filtrage anisotrope', 'Anisotrope Filterung',
      'Filtrado anisotrópico'),
     ("Game's own", 'Del gioco', 'Celui du jeu', 'Wie im Spiel', 'El del juego'),
@@ -279,6 +287,7 @@ FPS_CHOICES = [('30', '30'), ('60', '60'), ('120', '120'), ('0', 'Unlimited')]
 # Render resolution patches (patches/CUSA01113.xml, scripts/gr_resolution_patch.py).
 RESOLUTION_CHOICES = [('native', 'Native (1080p)'), ('720p', '720p (faster)'), ('1440p', '1440p'),
                       ('1800p', '1800p'), ('4K', '4K (sharpest)')]
+SHADOW_CHOICES = [('standard', 'Standard (2048)'), ('high', 'High (4096)')]
 ANISOTROPY_CHOICES = [('0', "Game's own"), ('2', '2x'), ('4', '4x'), ('8', '8x'), ('16', '16x')]
 
 
@@ -1389,6 +1398,11 @@ class LauncherWindow:
                                        lambda v: self.set_ini('render_resolution', v), 16).pack(side='right'),
                  'The size the game draws at. Above your screen it works as anti-aliasing: 4K on a 1440p screen is '
                  'the cleanest image.')
+        shadows = self.ini.get('shadow_quality', 'standard')
+        self.row(body, 'Shadow quality',
+                 lambda c: self.choice(c, SHADOW_CHOICES, shadows if shadows in dict(SHADOW_CHOICES) else 'standard',
+                                       lambda v: self.set_ini('shadow_quality', v), 16).pack(side='right'),
+                 'Sharper shadow edges and fewer jagged lines. Uses 256 MB of video memory.')
         aniso = self.ini.get('anisotropy', '16')
         self.row(body, 'Anisotropic filtering',
                  lambda c: self.choice(c, ANISOTROPY_CHOICES, aniso if aniso in dict(ANISOTROPY_CHOICES) else '16',
@@ -1396,7 +1410,8 @@ class LauncherWindow:
                  'Sharper textures seen at an angle. The game already uses 16x on its world textures; this raises the '
                  'ones that use less.')
         self.footer(foot, [('Reset', lambda: self.reset({'display_mode': 'borderless', 'vsync': '1', 'fps_limit': '0',
-                                                         'render_resolution': 'native', 'anisotropy': '16'}), False),
+                                                         'render_resolution': 'native', 'anisotropy': '16',
+                                                         'shadow_quality': 'standard'}), False),
                            ('Apply', self.apply, True)])
 
     def page_controls(self, body, foot):

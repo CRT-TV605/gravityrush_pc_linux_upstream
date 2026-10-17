@@ -157,4 +157,12 @@
             <Line Type="bytes32" Address="0x005b6227" Value="0x780"/>
         </PatchList>
     </Metadata>
+    <Metadata Title="Gravity Rush Remastered" Name="Shadow Quality - 4096" Note="Shadow map 4096x4096 (the game uses 2048x2048)." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
+        <PatchList>
+            <Line Type="bytes" Address="0x00428679" Value="00100000"/>
+            <Line Type="bytes" Address="0x0042867f" Value="00100000"/>
+            <Line Type="bytes" Address="0x0046dd51" Value="d1e6d1e2d1e141d1e0e9515afaff"/>
+            <Line Type="bytes" Address="0x00674e4d" Value="e8ff8edfff"/>
+        </PatchList>
+    </Metadata>
 </Patch>

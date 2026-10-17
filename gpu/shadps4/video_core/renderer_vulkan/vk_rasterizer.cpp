@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <set>
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "gow3_toggles.h"
@@ -2043,6 +2044,40 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                              Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data, u32& write_index) {
     const u64 alignment = instance.StorageMinAlignment();
+    // GOW3_SHADOW_CB_TRACE=1: constants of the shaders that read a shadow map (a square layered
+    // texture of 2048 or more), a few times per shader.
+    static const bool shadow_cb_trace = std::getenv("GOW3_SHADOW_CB_TRACE") != nullptr;
+    if (shadow_cb_trace) {
+        static std::unordered_map<u64, u32> seen;
+        for (const auto& res : stage.images) {
+            const auto image = res.GetSharp(stage);
+            const u32 w = u32(image.width) + 1, h = u32(image.height) + 1;
+            if (w != h || w < 2048 || image.NumLayers() < 2 || seen[stage.pgm_hash] >= 2) {
+                continue;
+            }
+            ++seen[stage.pgm_hash];
+            std::printf("ShadowCB: stage %016llx reads %ux%u x%u (depth %d, native %d)\n",
+                        (unsigned long long)stage.pgm_hash, w, h, image.NumLayers(), int(res.is_depth),
+                        int(res.needs_native));
+            for (u32 i = 0; i < stage.buffers.size(); ++i) {
+                if (stage.buffers[i].IsSpecial()) {
+                    continue;
+                }
+                const auto vsharp = stage.buffers[i].GetSharp(stage);
+                if (!vsharp.base_address || !memory->IsValidGpuMapping(vsharp.base_address, 0)) {
+                    continue;
+                }
+                const u32 count = std::min<u32>(u32(vsharp.GetSize()) / 4, 96);
+                const auto* f = reinterpret_cast<const float*>(vsharp.base_address);
+                std::printf("  buffer %u size %u:", i, u32(vsharp.GetSize()));
+                for (u32 k = 0; k < count; ++k) {
+                    std::printf("%s%g", k % 8 ? " " : "\n   ", f[k]);
+                }
+                std::printf("\n");
+            }
+            break;
+        }
+    }
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
         const auto& desc = stage.buffers[buffer_index];
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
@@ -2853,6 +2888,26 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         auto& image = texture_cache.GetImage(image_id);
 
         const auto slice = image_view.info.range.base.layer;
+        // GOW3_SHADOW_TRACE=1: passes into square layered depth targets (shadow maps).
+        static const bool shadow_trace = std::getenv("GOW3_SHADOW_TRACE") != nullptr;
+        static u32 shadow_lines = 0;
+        shadow_pass_traced = shadow_trace && image.info.size.width >= 1024 &&
+                             image.info.size.width == image.info.size.height &&
+                             image.info.resources.layers > 1;
+        if (shadow_trace && shadow_lines < 400 && image.info.size.width >= 1024 &&
+            image.info.size.width == image.info.size.height) {
+            ++shadow_lines;
+            const auto& vp = regs.viewports[0];
+            const auto& s0 = regs.viewport_scissors[0];
+            std::printf("Shadow: %ux%u layer %u/%u vp scale %.1f,%.1f off %.1f,%.1f scissor %d,%d-%d,%d "
+                        "screen %d,%d-%d,%d clear %d\n",
+                        image.info.size.width, image.info.size.height, slice, image.info.resources.layers,
+                        vp.xscale, vp.yscale, vp.xoffset, vp.yoffset, s0.top_left_x, s0.top_left_y,
+                        s0.bottom_right_x, s0.bottom_right_y, regs.screen_scissor.top_left_x,
+                        regs.screen_scissor.top_left_y, regs.screen_scissor.bottom_right_x,
+                        regs.screen_scissor.bottom_right_y,
+                        int(regs.depth_render_control.depth_clear_enable));
+        }
         const bool is_depth_clear =
             (regs.depth_render_control.depth_clear_enable && regs.depth_control.depth_enable &&
              regs.depth_control.depth_write_enable) ||
@@ -3238,6 +3293,14 @@ void Rasterizer::UpdateViewportScissorState() const {
     }
 
     const auto& vp_ctl = regs.viewport_control;
+    if (shadow_pass_traced) {  // GOW3_SHADOW_TRACE: every distinct viewport drawn into a shadow map
+        static std::set<std::array<float, 4>> seen_viewports;
+        const auto& vp = regs.viewports[0];
+        if (seen_viewports.size() < 64 && seen_viewports.insert({vp.xscale, vp.yscale, vp.xoffset, vp.yoffset}).second) {
+            std::printf("ShadowVP: scale %.1f,%.1f off %.1f,%.1f clipdis %d\n", vp.xscale, vp.yscale,
+                        vp.xoffset, vp.yoffset, int(regs.IsClipDisabled()));
+        }
+    }
     for (u32 i = 0; i < AmdGpu::NUM_VIEWPORTS; i++) {
         const auto& vp = regs.viewports[i];
         const auto& vp_d = regs.viewport_depths[i];

@@ -234,8 +234,15 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
     display = display && targets.size() == 1;
     const bool new_pass = !(pass_open && !entries.empty() && !entries.back().compute &&
                             entries.back().colors == targets);
-    if (display && new_pass) {
+    // Gravity Rush ends a frame with two display passes in a row: a recording ends at the first
+    // display pass after a scene pass.
+    static bool scene_seen = false;
+    if (state.load(std::memory_order_relaxed) == Recording && !display && new_pass) {
+        scene_seen = true;
+    }
+    if (display && new_pass && !(state.load(std::memory_order_relaxed) == Recording && !scene_seen)) {
         if (state.load(std::memory_order_relaxed) == Recording) {
+            scene_seen = false;
             Write(last_presented.load(std::memory_order_relaxed));
             entries.clear();
             pending_sampled.clear();
@@ -247,6 +254,7 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
         pending_sampled.clear();
         pending_buffers.clear();
         pass_open = false;
+        scene_seen = false;
         state.store(Recording, std::memory_order_release);
     }
     if (state.load(std::memory_order_relaxed) != Recording) {
