@@ -46,41 +46,25 @@ def values(width, height):
     return {'W': width, 'H': height, 'w': width // 2, 'h': height // 2, 'hh': align(height // 2, 32)}
 
 
-# Shadow map: one 2048x2048 depth texture with four cascades. A larger map needs three more
-# changes: the cascade viewports (set at 0x274e4d through 0x137b0 with x, y, w, h in esi, edx, ecx,
-# r8d, from 2048-based rectangles) go through a small routine in padding at 0x6dd51 that scales
-# them; the texel size the shaders get (0x104d310: two floats, 1/2048) follows the map.
+# Shadow map: one 2048x2048 depth texture with four cascades. Only its size is patched: the game
+# keeps setting 2048-based cascade viewports (0x274e4d -> 0x137b0) and the renderer scales them for
+# the passes into the larger map (vk_rasterizer.cpp). Scaling them in the game instead (a routine
+# in padding at 0x6dd51) left the doubled viewport in the game's state for later 2D draws: the
+# comic panels came out at half position and size. The constant at 0x104d310 must stay 1/2048:
+# the shaders also turn 2048-based positions into texture coordinates with it.
 SHADOW_SIZE_SITES = [0x28679, 0x2867f]
 SHADOW_TEXEL = 0x104d310
-SHADOW_CALL = 0x274e4d          # call 0x137b0 (set viewport)
-SHADOW_VIEWPORT = 0x137b0
-SHADOW_CAVE = 0x6dd51           # 15 bytes of padding after a ret
-# Checked on 17 Oct 2026: all four cascades draw into the whole map (GOW3_SHADOW_TRACE) and the
-# shaders' constants are unchanged (GOW3_SHADOW_CB_TRACE). The constant at 0x104d310 must stay
-# 1/2048: the shaders also turn 2048-based positions into texture coordinates with it.
 SHADOW_SIZES = {'4096': 4096}
 
 
 def shadow_writes(size):
-    """[(image offset, bytes)] of the shadow map patch for a size of 2048 times a power of two."""
-    shift = (size // 2048).bit_length() - 1
-    assert 2048 << shift == size and shift >= 1
-    if shift == 1:
-        shl = bytes([0xd1, 0xe6, 0xd1, 0xe2, 0xd1, 0xe1, 0x41, 0xd1, 0xe0])  # shl esi/edx/ecx/r8d, 1
-    else:
-        shl = bytes([0xc1, 0xe6, shift, 0xc1, 0xe2, shift, 0xc1, 0xe1, shift, 0x41, 0xc1, 0xe0, shift])
-    jmp_at = SHADOW_CAVE + len(shl)
-    cave = shl + b'\xe9' + struct.pack('<i', SHADOW_VIEWPORT - (jmp_at + 5))
-    assert len(cave) <= 15
-    call = b'\xe8' + struct.pack('<i', SHADOW_CAVE - (SHADOW_CALL + 5))
-    return ([(o, struct.pack('<I', size)) for o in SHADOW_SIZE_SITES] +
-            [(SHADOW_CAVE, cave), (SHADOW_CALL, call)])
+    """[(image offset, bytes)] of the shadow map patch."""
+    return [(o, struct.pack('<I', size)) for o in SHADOW_SIZE_SITES]
 
 
 def check_shadow(image):
     expected = [(o, struct.pack('<I', 2048)) for o in SHADOW_SIZE_SITES] + [
-        (SHADOW_TEXEL, struct.pack('<2f', 1 / 2048, 1 / 2048)), (SHADOW_CAVE, b'\x90' * 15),
-        (SHADOW_CALL, b'\xe8' + struct.pack('<i', SHADOW_VIEWPORT - (SHADOW_CALL + 5)))]
+        (SHADOW_TEXEL, struct.pack('<2f', 1 / 2048, 1 / 2048))]
     for offset, data in expected:
         if image[offset:offset + len(data)] != data:
             raise SystemExit(f'{offset:#x}: not the expected bytes (another eboot build?)')

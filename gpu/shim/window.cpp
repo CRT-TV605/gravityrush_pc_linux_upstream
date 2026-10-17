@@ -70,15 +70,28 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 }
 
 // Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
-// mode. Window thread only (SDL). The swapchain follows the size events.
+// size, with the refresh rate of gravityrush.ini (refresh_rate, 0: the desktop's). Window thread
+// only (SDL). The swapchain follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
+    refresh_rate = Gow3Settings::Get().refresh_rate;
     if (mode == Gow3Graphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
     } else {
-        const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window));
+        const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+        const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
         const bool exclusive = mode == Gow3Graphics::Fullscreen && desktop;
-        if (!SDL_SetWindowFullscreenMode(window, exclusive ? desktop : nullptr)) {
+        SDL_DisplayMode chosen{};
+        const SDL_DisplayMode* target = desktop;
+        if (exclusive && refresh_rate > 0 &&
+            SDL_GetClosestFullscreenDisplayMode(display, desktop->w, desktop->h, float(refresh_rate), false,
+                                                &chosen)) {
+            target = &chosen;
+        }
+        if (exclusive) {
+            std::printf("Window: fullscreen %dx%d at %.2f Hz\n", target->w, target->h, target->refresh_rate);
+        }
+        if (!SDL_SetWindowFullscreenMode(window, exclusive ? target : nullptr)) {
             LOG_WARNING(Frontend, "Fullscreen mode: {}", SDL_GetError());
         }
         SDL_SetWindowFullscreen(window, true);
@@ -125,7 +138,8 @@ bool WindowSDL::PollEvents() {
     if (!text_active) {
         Gow3Overlay::UpdateTextInput(window);
     }
-    if (const int mode = Gow3Settings::Get().display_mode; mode != display_mode) {
+    if (const int mode = Gow3Settings::Get().display_mode;
+        mode != display_mode || Gow3Settings::Get().refresh_rate != refresh_rate) {
         ApplyDisplayMode(mode);
     }
     SDL_Event event;

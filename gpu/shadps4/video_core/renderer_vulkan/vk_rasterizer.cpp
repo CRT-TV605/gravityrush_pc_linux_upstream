@@ -2877,6 +2877,12 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             }
         }
     }
+    // GOW3_VIEWPORT_TRACE: the pass's first target, for viewports smaller than it.
+    traced_target = {};
+    if (cb_descs[0].first) {
+        const auto& info = texture_cache.GetImage(cb_descs[0].first).info;
+        traced_target = {info.guest_address, info.size.width, info.size.height};
+    }
     for (u32 cb = state.num_color_attachments; cb < state.color_attachments.size(); ++cb) {
         state.color_attachments[cb] = {};
     }
@@ -3027,6 +3033,18 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             target_scale = UiComposition::Scale(guest_extent.first, guest_extent.second,
                                                 redirect.width, redirect.height,
                                                 native_coordinates);
+        }
+    }
+
+    // Gravity Rush's high shadow quality (patch "Shadow Quality - 4096") enlarges only the shadow
+    // map: the game still sets 2048-based cascade viewports, scaled here for the passes into it,
+    // so the game's own viewport state (inherited by later 2D draws) stays as in the original.
+    if (db_desc.first && target_scale[0] == 1.0f) {
+        const auto& depth_info = texture_cache.GetImage(db_desc.first).info;
+        if (depth_info.size.width == depth_info.size.height && depth_info.size.width > 2048 &&
+            depth_info.resources.layers == 4) {
+            const float scale = float(depth_info.size.width) / 2048.0f;
+            target_scale = {scale, scale};
         }
     }
 
@@ -3293,6 +3311,67 @@ void Rasterizer::UpdateViewportScissorState() const {
     }
 
     const auto& vp_ctl = regs.viewport_control;
+    static const bool viewport_trace = std::getenv("GOW3_VIEWPORT_TRACE") != nullptr;
+    if (viewport_trace && traced_target.width >= 64 && !regs.IsClipDisabled()) {
+        const auto& vp = regs.viewports[0];
+        const float vw = 2.0f * std::abs(vp.xscale), vh = 2.0f * std::abs(vp.yscale);
+        if (vw > 1.1f * float(traced_target.width) || vh > 1.1f * float(traced_target.height)) {
+            static std::set<std::array<u64, 5>> seen_big;
+            const std::array<u64, 5> key{traced_target.address, traced_target.width, traced_target.height,
+                                         u64(vw), u64(vh)};
+            if (seen_big.size() < 200 && seen_big.insert(key).second) {
+                std::printf("BigVP: target %#llx %ux%u viewport %.0fx%.0f at %.0f,%.0f\n",
+                            (unsigned long long)traced_target.address, traced_target.width,
+                            traced_target.height, vw, vh, vp.xoffset - std::abs(vp.xscale),
+                            vp.yoffset - std::abs(vp.yscale));
+            }
+        }
+    }
+    if (viewport_trace && traced_target.width >= 1280 && regs.IsClipDisabled()) {
+        static std::set<std::array<u64, 3>> seen_clipless;
+        if (seen_clipless.size() < 100 &&
+            seen_clipless.insert({traced_target.address, traced_target.width, traced_target.height}).second) {
+            std::printf("ClipOff: target %#llx %ux%u\n", (unsigned long long)traced_target.address,
+                        traced_target.width, traced_target.height);
+        }
+    }
+    if (viewport_trace && traced_target.width >= 1280 && !regs.IsClipDisabled()) {
+        const auto& vp = regs.viewports[0];
+        const float vw = 2.0f * std::abs(vp.xscale), vh = 2.0f * std::abs(vp.yscale);
+        if (vw < 0.9f * float(traced_target.width) || vh < 0.9f * float(traced_target.height)) {
+            static std::set<std::array<u64, 5>> seen;
+            const std::array<u64, 5> key{traced_target.address, traced_target.width, traced_target.height,
+                                         u64(vw), u64(vh)};
+            if (seen.size() < 200 && seen.insert(key).second) {
+                std::printf("SubVP: target %#llx %ux%u viewport %.0fx%.0f at %.0f,%.0f\n",
+                            (unsigned long long)traced_target.address, traced_target.width,
+                            traced_target.height, vw, vh, vp.xoffset - std::abs(vp.xscale),
+                            vp.yoffset - std::abs(vp.yscale));
+            }
+        }
+    }
+    if (viewport_trace && traced_target.width >= 1280) {
+        const s32 sw = s32(scsr.GetWidth()), sh = s32(scsr.GetHeight());
+        if (sw > 0 && sh > 0 && (sw < s32(traced_target.width) * 9 / 10 || sh < s32(traced_target.height) * 9 / 10)) {
+            static std::set<std::array<u64, 6>> seen_scissors;
+            const std::array<u64, 6> key{traced_target.address, u64(scsr.top_left_x), u64(scsr.top_left_y),
+                                         u64(sw), u64(sh), u64(regs.IsClipDisabled())};
+            if (seen_scissors.size() < 200 && seen_scissors.insert(key).second) {
+                const auto& vp = regs.viewports[0];
+                std::printf("SubScissor: target %#llx %ux%u scissor %d,%d %dx%d (screen %d,%d-%d,%d generic %d,%d-%d,%d "
+                            "window %d,%d-%d,%d) vp %.0fx%.0f clipoff %d\n",
+                            (unsigned long long)traced_target.address, traced_target.width, traced_target.height,
+                            scsr.top_left_x, scsr.top_left_y, sw, sh, regs.screen_scissor.top_left_x,
+                            regs.screen_scissor.top_left_y, regs.screen_scissor.bottom_right_x,
+                            regs.screen_scissor.bottom_right_y, regs.generic_scissor.top_left_x,
+                            regs.generic_scissor.top_left_y, regs.generic_scissor.bottom_right_x,
+                            regs.generic_scissor.bottom_right_y, regs.window_scissor.top_left_x,
+                            regs.window_scissor.top_left_y, regs.window_scissor.bottom_right_x,
+                            regs.window_scissor.bottom_right_y, 2.0f * std::abs(vp.xscale),
+                            2.0f * std::abs(vp.yscale), int(regs.IsClipDisabled()));
+            }
+        }
+    }
     if (shadow_pass_traced) {  // GOW3_SHADOW_TRACE: every distinct viewport drawn into a shadow map
         static std::set<std::array<float, 4>> seen_viewports;
         const auto& vp = regs.viewports[0];

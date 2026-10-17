@@ -60,6 +60,8 @@ struct Values {
     std::atomic<bool> actor_watch_supported{false};
     // Graphics (gow3_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{1}; // borderless by default
+    /// Exclusive fullscreen refresh rate in Hz; 0 keeps the desktop's.
+    std::atomic<int> refresh_rate{0};
     std::atomic<bool> vsync{true};
     std::atomic<int> fps_limit{0};
     std::atomic<bool> async_shaders{true};

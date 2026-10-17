@@ -161,8 +161,6 @@
         <PatchList>
             <Line Type="bytes" Address="0x00428679" Value="00100000"/>
             <Line Type="bytes" Address="0x0042867f" Value="00100000"/>
-            <Line Type="bytes" Address="0x0046dd51" Value="d1e6d1e2d1e141d1e0e9515afaff"/>
-            <Line Type="bytes" Address="0x00674e4d" Value="e8ff8edfff"/>
         </PatchList>
     </Metadata>
 </Patch>

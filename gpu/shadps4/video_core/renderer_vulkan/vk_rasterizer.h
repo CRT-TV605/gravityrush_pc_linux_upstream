@@ -338,6 +338,7 @@ private:
     std::array<float, 2> draw_jitter{};         ///< viewport offset of the current draw, pixels
     std::array<float, 2> target_scale{1.0f, 1.0f}; ///< pass drawn into the upscaler's output-size images
     bool shadow_pass_traced = false; ///< GOW3_SHADOW_TRACE: the pass draws into a shadow map
+    struct { u64 address; u32 width, height; } traced_target{}; ///< GOW3_VIEWPORT_TRACE
     const bool host_markers_enabled;
     const bool guest_markers_enabled;
 

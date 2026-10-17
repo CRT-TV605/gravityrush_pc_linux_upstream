@@ -101,6 +101,13 @@ _ROWS = [
     ('Borderless', 'Senza bordi', 'Sans bordure', 'Rahmenlos', 'Sin bordes'),
     ('Vertical sync', 'Sincronia verticale', 'Synchro verticale', 'Vertikale Synchronisation', 'Sincronización vertical'),
     ('FPS limit', 'Limite FPS', 'Limite d\'IPS', 'FPS-Limit', 'Límite de FPS'),
+    ('Refresh rate', 'Frequenza schermo', 'Fréquence d\'affichage', 'Bildwiederholrate', 'Frecuencia de pantalla'),
+    ('Desktop', 'Come Windows', 'Comme Windows', 'Wie Windows', 'Como Windows'),
+    ('Used in Fullscreen. Borderless and windowed follow the Windows setting.',
+     'Vale in Schermo intero. Senza bordi e Finestra seguono l\'impostazione di Windows.',
+     'Utilisée en Plein écran. Sans bordure et Fenêtré suivent le réglage de Windows.',
+     'Gilt im Vollbild. Rahmenlos und Fenster folgen der Windows-Einstellung.',
+     'Se usa en Pantalla completa. Sin bordes y Ventana siguen el ajuste de Windows.'),
     ('Unlimited', 'Libero', 'Illimité', 'Unbegrenzt', 'Sin límite'),
     ('IMAGE', 'IMMAGINE', 'IMAGE', 'BILD', 'IMAGEN'),
     ('Shadow quality', 'Qualità ombre', 'Qualité des ombres', 'Schattenqualität', 'Calidad de sombras'),
@@ -258,6 +265,38 @@ _ROWS = [
 ]
 TRANSLATIONS = {code: {row[0]: row[i] for row in _ROWS} for i, code in enumerate(('it', 'fr', 'de', 'es'), 1)}
 LANG = 'en'
+
+
+def refresh_rates():
+    """Refresh rates (Hz) the main display offers at the desktop resolution, from Windows."""
+    from ctypes import wintypes
+
+    class DEVMODEW(ctypes.Structure):
+        _fields_ = [('dmDeviceName', wintypes.WCHAR * 32), ('dmSpecVersion', wintypes.WORD),
+                    ('dmDriverVersion', wintypes.WORD), ('dmSize', wintypes.WORD),
+                    ('dmDriverExtra', wintypes.WORD), ('dmFields', wintypes.DWORD),
+                    ('dmPositionX', wintypes.LONG), ('dmPositionY', wintypes.LONG),
+                    ('dmDisplayOrientation', wintypes.DWORD), ('dmDisplayFixedOutput', wintypes.DWORD),
+                    ('dmColor', ctypes.c_short), ('dmDuplex', ctypes.c_short), ('dmYResolution', ctypes.c_short),
+                    ('dmTTOption', ctypes.c_short), ('dmCollate', ctypes.c_short),
+                    ('dmFormName', wintypes.WCHAR * 32), ('dmLogPixels', wintypes.WORD),
+                    ('dmBitsPerPel', wintypes.DWORD), ('dmPelsWidth', wintypes.DWORD),
+                    ('dmPelsHeight', wintypes.DWORD), ('dmDisplayFlags', wintypes.DWORD),
+                    ('dmDisplayFrequency', wintypes.DWORD)]
+    try:
+        enum = ctypes.windll.user32.EnumDisplaySettingsW
+        current = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
+        if not enum(None, -1, ctypes.byref(current)):  # ENUM_CURRENT_SETTINGS
+            return []
+        rates, mode, index = set(), DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW)), 0
+        while enum(None, index, ctypes.byref(mode)):
+            if (mode.dmPelsWidth, mode.dmPelsHeight) == (current.dmPelsWidth, current.dmPelsHeight) and \
+                    mode.dmDisplayFrequency > 1:
+                rates.add(int(mode.dmDisplayFrequency))
+            index += 1
+        return sorted(rates)
+    except (AttributeError, OSError):
+        return []
 
 
 def t(text):
@@ -1389,6 +1428,13 @@ class LauncherWindow:
         self.row(body, 'FPS limit', lambda c: Segments(self, c, FPS_CHOICES, self.ini.get('fps_limit', '0'),
                                                       lambda v: self.set_ini('fps_limit', v)).widget.pack(side='right'),
                  'The game is made for 60 FPS; other values can change physics and animations.')
+        rates = [('0', 'Desktop')] + [(str(r), f'{r} Hz') for r in refresh_rates()]
+        rate = self.ini.get('refresh_rate', '0')
+        if rate not in dict(rates):
+            rates.append((rate, f'{rate} Hz'))
+        self.row(body, 'Refresh rate',
+                 lambda c: self.choice(c, rates, rate, lambda v: self.set_ini('refresh_rate', v), 16).pack(side='right'),
+                 'Used in Fullscreen. Borderless and windowed follow the Windows setting.')
         self.sec(body, 'IMAGE')
         current = self.ini.get('render_resolution', 'native')
         if current not in dict(RESOLUTION_CHOICES):
@@ -1410,6 +1456,7 @@ class LauncherWindow:
                  'Sharper textures seen at an angle. The game already uses 16x on its world textures; this raises the '
                  'ones that use less.')
         self.footer(foot, [('Reset', lambda: self.reset({'display_mode': 'borderless', 'vsync': '1', 'fps_limit': '0',
+                                                         'refresh_rate': '0',
                                                          'render_resolution': 'native', 'anisotropy': '16',
                                                          'shadow_quality': 'standard'}), False),
                            ('Apply', self.apply, True)])
