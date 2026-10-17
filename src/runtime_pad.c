@@ -514,7 +514,20 @@ static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
 }
 static ABI int32_t pad_ok_handle(int32_t handle) { return handle==PAD_HANDLE && opened ? 0 : ERR_INVALID_HANDLE; }
 static ABI int32_t pad_ok_handle_flag(int32_t handle, uint8_t flag) { (void)flag; return pad_ok_handle(handle); }
+/* The game's motion sensor settings (logged: the orientation is integrated without them). */
+static ABI int32_t pad_deadband_state(int32_t handle, uint8_t flag) {
+    static int logged;
+    if (!logged++) printf("Runtime: scePadSetAngularVelocityDeadbandState(%d)\n",flag);
+    return pad_ok_handle(handle);
+}
+static ABI int32_t pad_tilt_correction_state(int32_t handle, uint8_t flag) {
+    static int logged;
+    if (!logged++) printf("Runtime: scePadSetTiltCorrectionState(%d)\n",flag);
+    return pad_ok_handle(handle);
+}
 static ABI int32_t pad_reset_orientation(int32_t handle) {
+    static int logged;
+    if (logged++<5) printf("Runtime: scePadResetOrientation\n");
     int32_t r=pad_ok_handle(handle);
     if (!r) { pthread_mutex_lock(&lock); motion_reset(); pthread_mutex_unlock(&lock); }
     return r;
@@ -537,7 +550,7 @@ static const RuntimeExport exports[]={
     {"scePadReadState",pad_read_state}, {"scePadRead",pad_read},
     {"scePadGetControllerInformation",pad_info}, {"scePadSetVibration",pad_vibration},
     {"scePadResetOrientation",pad_reset_orientation},
-    {"scePadSetAngularVelocityDeadbandState",pad_ok_handle_flag}, {"scePadSetTiltCorrectionState",pad_ok_handle_flag},
+    {"scePadSetAngularVelocityDeadbandState",pad_deadband_state}, {"scePadSetTiltCorrectionState",pad_tilt_correction_state},
     {"scePadSetMotionSensorState",pad_ok_handle_flag},
 };
 uintptr_t runtime_pad_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

@@ -174,6 +174,7 @@ void FrameCapture::OnFlip(VAddr presented_address) {
         arm = true;
     }
     if (arm) {
+        armed_flip.store(flips.load(std::memory_order_relaxed), std::memory_order_relaxed);
         state.store(Armed, std::memory_order_release);
         std::printf("Frame capture: armed\n");
     }
@@ -234,28 +235,26 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
     display = display && targets.size() == 1;
     const bool new_pass = !(pass_open && !entries.empty() && !entries.back().compute &&
                             entries.back().colors == targets);
-    // Gravity Rush ends a frame with two display passes in a row: a recording ends at the first
-    // display pass after a scene pass.
-    static bool scene_seen = false;
-    if (state.load(std::memory_order_relaxed) == Recording && !display && new_pass) {
-        scene_seen = true;
-    }
-    if (display && new_pass && !(state.load(std::memory_order_relaxed) == Recording && !scene_seen)) {
-        if (state.load(std::memory_order_relaxed) == Recording) {
-            scene_seen = false;
-            Write(last_presented.load(std::memory_order_relaxed));
-            entries.clear();
-            pending_sampled.clear();
-            pending_buffers.clear();
-            state.store(Idle, std::memory_order_release);
-            return;
-        }
+    (void)new_pass;
+    (void)display;
+    // Gravity Rush: everything the GPU draws between the second and the fourth flip after the
+    // request (two whole frames, wherever their passes start) is recorded.
+    const u64 flip = flips.load(std::memory_order_acquire);
+    const u64 armed = armed_flip.load(std::memory_order_relaxed);
+    if (state.load(std::memory_order_relaxed) == Armed && flip >= armed + 2) {
         entries.clear();
         pending_sampled.clear();
         pending_buffers.clear();
         pass_open = false;
-        scene_seen = false;
         state.store(Recording, std::memory_order_release);
+    }
+    if (state.load(std::memory_order_relaxed) == Recording && flip >= armed + 4) {
+        Write(last_presented.load(std::memory_order_relaxed));
+        entries.clear();
+        pending_sampled.clear();
+        pending_buffers.clear();
+        state.store(Idle, std::memory_order_release);
+        return;
     }
     if (state.load(std::memory_order_relaxed) != Recording) {
         pending_sampled.clear();

@@ -59,6 +59,9 @@ extern "C" const unsigned char gow3_font_ttf_end[];
 
 namespace Gow3Overlay {
 
+/// When F12 closes the game (steady clock ticks; 0: not requested).
+static std::atomic<long long> f12_quit_at{0};
+
 namespace {
 
 std::mutex imgui_mutex; // the ImGui context: window thread (input) and present thread
@@ -1100,6 +1103,16 @@ bool HandleEvent(const SDL_Event& event) {
                     std::fflush(stdout);
                 }
             }
+            // GOW3_F12_QUIT=1 (the launcher's default): the game closes once the frames and the
+            // thread dump are written, so the report ends where the problem was seen.
+            static const bool quit_after = [] {
+                const char* env = std::getenv("GOW3_F12_QUIT");
+                return env && *env == '1';
+            }();
+            if (quit_after && f12_quit_at.load() == 0) {
+                const auto at = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+                f12_quit_at.store(at.time_since_epoch().count());
+            }
             return true;
         }
         if (down && !event.key.repeat &&
@@ -1250,6 +1263,16 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
     text_entry_active = active;
     text_entry_prompt = prompt;
     text_entry_text = text;
+}
+
+bool QuitDue() {
+    const auto at = f12_quit_at.load();
+    if (at == 0 || std::chrono::steady_clock::now().time_since_epoch().count() < at) {
+        return false;
+    }
+    std::printf("Overlay: F12 report saved, closing the game\n");
+    std::fflush(stdout);
+    return true;
 }
 
 // GOW3_FPS_LOG=1: presented frames per second and the worst frame, every 5 s (benchmarks).

@@ -345,6 +345,8 @@ def game_environment(s):
         env.setdefault('GOW3_DUMP_DIR', str(session))
         env.setdefault('GOW3_FRAME_DUMP_TRIGGER', str(shots / 'trigger'))
         env.setdefault('GOW3_FRAME_DUMP_COUNT', '8')
+        # F12 also closes the game once the frames are saved (the report ends at the problem).
+        env.setdefault('GOW3_F12_QUIT', '1')
         # Diagnostics: GPU optimizations switched off while playing, by writing a number here.
         env.setdefault('GOW3_TOGGLE_FILE', str(shots / 'toggles.txt'))
         # Frame analyzer: creating this file records how the next frame is drawn (render passes).

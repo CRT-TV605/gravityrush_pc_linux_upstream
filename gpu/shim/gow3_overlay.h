@@ -54,6 +54,10 @@ void PollChoiceInput();
 /// `active` is false; typing goes to the window (sdl_window), the box only displays it.
 void SetTextEntry(bool active, const std::string& prompt, const std::string& text);
 
+/// GOW3_F12_QUIT=1: F12 saves the frames, then the game closes. True once that time has come
+/// (window thread: it then closes the window).
+bool QuitDue();
+
 /// The game's save list: shown until the player chooses (arrows/D-pad, Enter/Cross) or
 /// cancels (Esc/Circle). `pictures`: one per item (empty = none), drawn beside its text.
 /// PollChoice: -1 while open, -2 cancelled, else the chosen index.

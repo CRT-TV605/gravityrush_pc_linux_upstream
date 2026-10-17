@@ -480,6 +480,50 @@ static void install_actor_watch(const char *app0, Segment *segments, uint64_t co
     printf("Health display: damage hook ready (enemy health bar in the menu)\n");
 }
 
+#ifdef _WIN32
+/* GOW3_RT_TRACE=1 (diagnostics, Gravity Rush 01.00): every render target the game initialises
+ * (image offset 0x153b0: device, target, format, width, height, pitch) is logged with its caller.
+ * The stub only records into a ring; a thread prints it. */
+static volatile uint64_t rt_trace_ring[1 + 64 * 4];
+static DWORD WINAPI rt_trace_printer(void *arg) {
+    (void)arg;
+    uint64_t seen = 0;
+    for (;;) {
+        Sleep(200);
+        const uint64_t count = rt_trace_ring[0];
+        for (; seen < count; ++seen) {
+            const volatile uint64_t *e = &rt_trace_ring[1 + (seen & 63) * 4];
+            char where[MAX_PATH + 64];
+            describe_address(where, sizeof(where), (uintptr_t)e[2]);
+            printf("RTInit: %ux%u format %u pitch %u target %p from %s\n", (unsigned)(uint32_t)e[0],
+                   (unsigned)(e[0] >> 32), (unsigned)(uint32_t)e[1], (unsigned)(e[1] >> 32), (void *)(uintptr_t)e[3], where);
+        }
+        fflush(stdout);
+    }
+    return 0;
+}
+static void install_rt_trace(uint64_t size) {
+    static const unsigned char original[8] = {0x55,0x48,0x89,0xe5,0x48,0x83,0xec,0x10};
+    static const unsigned char body[] = {0x49,0xbb,0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x41,0xba,0x01,0x00,0x00,0x00,0xf0,0x4d,0x0f,0xc1,0x13,0x41,0x83,0xe2,0x3f,0x49,0xc1,0xe2,0x05,0x4f,0x8d,0x54,0x13,0x08,0x41,0x89,0x0a,0x45,0x89,0x42,0x04,0x41,0x89,0x52,0x08,0x45,0x89,0x4a,0x0c,0x4c,0x8b,0x1c,0x24,0x4d,0x89,0x5a,0x10,0x49,0x89,0x72,0x18,0x55,0x48,0x89,0xe5,0x48,0x83,0xec,0x10,0xff,0x25,0x00,0x00,0x00,0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88};
+    const uint64_t at = 0x153b0;
+    if (at + 8 > size || memcmp(image + at, original, 8)) { printf("RT trace: code mismatch\n"); return; }
+    unsigned char *stub = allocate(page_size);
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) { printf("RT trace: stub out of range\n"); return; }
+    memcpy(stub, body, sizeof(body));
+    const uintptr_t ring = (uintptr_t)rt_trace_ring, resume = (uintptr_t)(image + at + 8);
+    memcpy(stub + 2, &ring, 8);
+    memcpy(stub + 0x4b, &resume, 8);
+    protect(stub, page_size, 5);
+    const int32_t relative = (int32_t)delta;
+    image[at] = 0xe9;
+    memcpy(image + at + 1, &relative, 4);
+    memset(image + at + 5, 0x90, 3);
+    CreateThread(NULL, 0, rt_trace_printer, NULL, 0, NULL);
+    printf("RT trace: render target hook ready\n");
+}
+#endif
+
 static void install_orb_multiplier(const char *app0, Segment *segments, uint64_t count,
                                    uint64_t size) {
     char path[4096], serial[32] = "", version[32] = "";
@@ -879,6 +923,9 @@ int main(int argc, char **argv) {
     if (game_hooks) install_cheats(app0, segments, ns, size);
     if (game_hooks) install_actor_watch(app0, segments, ns, size);
     if (game_hooks) install_stat_multipliers(app0, segments, ns, size);
+#ifdef _WIN32
+    if (getenv("GOW3_RT_TRACE") && !strcmp(hooks_serial, "CUSA01113")) install_rt_trace(size);
+#endif
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

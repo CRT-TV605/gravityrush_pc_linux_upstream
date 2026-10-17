@@ -54,6 +54,7 @@ private:
     enum : u32 { Idle, Armed, Recording };
     static inline std::atomic<u32> state{Idle};
     static inline std::atomic<u64> flips{0};
+    static inline std::atomic<u64> armed_flip{0};
     static inline std::atomic<VAddr> last_presented{0};
     static inline std::atomic<bool> requested{false};
 };
