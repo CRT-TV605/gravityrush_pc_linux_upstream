@@ -140,6 +140,22 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
             describe_address(where,sizeof(where),words[i]);
             fprintf(stderr,"  [rsp+%02x] %016llx %s\n",i*8,(unsigned long long)words[i],where);
         }
+    /* Unwind through the x64 unwind tables (system libraries keep no frame pointers); stops at the
+     * first frame without unwind data (guest code), where the rbp chain below goes on. */
+    {
+        CONTEXT u=*c;
+        for (int depth=0; depth<24 && u.Rip; ++depth) {
+            DWORD64 base=0;
+            PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(u.Rip,&base,NULL);
+            if (!fn) break;
+            void *handler_data=NULL;
+            DWORD64 frame=0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER,base,u.Rip,fn,&u,&handler_data,&frame,NULL);
+            if (!u.Rip) break;
+            describe_address(where,sizeof(where),(uintptr_t)u.Rip);
+            fprintf(stderr,"  unwind #%d %s\n",depth,where);
+        }
+    }
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
     for (int depth=0; depth<24 && rbp; ++depth) {
@@ -193,7 +209,52 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     if (code==0xC0000008 /* STATUS_INVALID_HANDLE */) return fatal_exception(info);
     return EXCEPTION_CONTINUE_SEARCH;
 }
-static LONG WINAPI unhandled_fault(EXCEPTION_POINTERS *info) { return fatal_exception(info); }
+/* Whether a crashing thread belongs to GLib alone: FFmpeg's librsvg pulls in GIO, whose own worker
+ * thread lists the installed Windows apps and sometimes crashes inside Windows' StateRepository
+ * (iertutil.dll). Every frame must be outside the game and this program, with GLib at the bottom. */
+static int glib_worker_thread(const CONTEXT *c) {
+    CONTEXT u=*c;
+    HMODULE self=GetModuleHandleA(NULL);
+    int glib=0;
+    for (int depth=0; depth<64 && u.Rip; ++depth) {
+        HMODULE module=NULL;
+        char name[MAX_PATH]="";
+        if (image && u.Rip-(uintptr_t)image<0x20000000) return 0;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)u.Rip,&module) && module) {
+            if (module==self) return 0;
+            GetModuleFileNameA(module,name,sizeof(name));
+            const char *base=strrchr(name,'\\');
+            base=base ? base+1 : name;
+            if (!_strnicmp(base,"libglib-2.0",11) || !_strnicmp(base,"libgio-2.0",10)) glib=1;
+        } else return 0;
+        DWORD64 image_base=0;
+        PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(u.Rip,&image_base,NULL);
+        if (!fn) {  /* a leaf function: the return address is on top of the stack */
+            if (depth) return 0;
+            DWORD64 ret=0;
+            SIZE_T got=0;
+            if (!ReadProcessMemory(GetCurrentProcess(),(void *)u.Rsp,&ret,sizeof(ret),&got) || got!=sizeof(ret)) return 0;
+            u.Rip=ret;
+            u.Rsp+=8;
+            continue;
+        }
+        void *handler_data=NULL;
+        DWORD64 frame=0;
+        RtlVirtualUnwind(UNW_FLAG_NHANDLER,image_base,u.Rip,fn,&u,&handler_data,&frame,NULL);
+    }
+    return glib;
+}
+static LONG WINAPI unhandled_fault(EXCEPTION_POINTERS *info) {
+    if (glib_worker_thread(info->ContextRecord)) {
+        char where[MAX_PATH+64];
+        describe_address(where,sizeof(where),(uintptr_t)info->ContextRecord->Rip);
+        fprintf(stderr,"Fault in a GLib worker thread at %s (exception 0x%08lx): that thread is ended, "
+                "the game goes on\n",where,info->ExceptionRecord->ExceptionCode);
+        fflush(stderr);
+        ExitThread(0);
+    }
+    return fatal_exception(info);
+}
 /* Guest code reads its TCB with `mov rax, gs:[0]` (link_*.py rewrote fs:[0]); on Windows
  * the displacement becomes the TEB TLS slot that holds the guest TCB (runtime_thread.c). */
 uint32_t runtime_thread_tcb_offset(void);
