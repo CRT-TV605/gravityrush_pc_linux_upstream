@@ -20,8 +20,11 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: playable in development builds — the opening, the first episode and the city work,
+**Status: first public preview (0.1.0) — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
+
+**[Download the latest preview](https://github.com/LucaPazienza/gravityrush_pc/releases)** —
+see [Playing the preview](#playing-the-preview) below.
 
 Tested on Windows 11 with an NVIDIA RTX 5070 Ti, an Xbox One controller and a DualSense.
 
@@ -34,7 +37,10 @@ What works today:
   pause and resume, a mastering limiter, and a 7.1-to-stereo downmix for stereo devices.
 - **Saves:** the save dialog, autosave, loading and manual saves; backups before every start.
 - **Graphics:** Vulkan through the shadPS4 video core, readable text (font library with FreeType),
-  borderless window by default (windowed and fullscreen in the settings).
+  borderless window by default (windowed and fullscreen, with a refresh rate choice).
+  **Render resolution up to 4K** (720p, 1440p, 1800p, 4K) through patches of the game's own
+  sizes and screen-space shader constants, **high-quality shadows** (4096 shadow map) and
+  anisotropic filtering.
 - **Input:** controllers through SDL3 (Xbox, DualSense and others), keyboard and mouse.
   The touchpad works with real touch ids; the mouse acts as a finger (hold and drag for swipes).
   The **DualSense gyro** steers the gravity camera like on the PS4 (adjustable sensitivity).
@@ -46,7 +52,9 @@ Not done yet / known gaps:
 
 - Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
   are not modelled: the dry sound plays.
-- No systematic testing of later episodes, stability over long sessions, or performance.
+- Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
+- A rare crash in the graphics command recorder has been seen once in a long session.
+- No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap
 
@@ -56,17 +64,32 @@ Not done yet / known gaps:
 - [x] Saves: load, autosave, manual save
 - [x] Controller, touchpad and DualSense gyro
 - [x] Launcher
+- [x] Render resolution up to 4K, high-quality shadows
+- [x] First preview release
 - [ ] Play through the whole story and fix what breaks
 - [ ] NGS2 effects (reverb, filters)
 - [ ] Performance and stability work
-- [ ] Release packages
 
 ## Requirements
 
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.
 - A graphics card with Vulkan 1.3 and a current driver.
-- Your own legally acquired copy of Gravity Rush Remastered (CUSA01113), as an unpacked folder
-  (eboot.bin, sce_module, sce_sys) or a fake package (.pkg).
+- Your own legally acquired copy of Gravity Rush Remastered (PS4), as an unpacked game folder
+  (eboot.bin, sce_module, sce_sys) that you prepare with your own tools. Tested with the European
+  release CUSA01113, version 01.00; the resolution and shadow patches only apply to that version.
+
+## Playing the preview
+
+1. Download `gravityrush-windows.zip` from [Releases](https://github.com/LucaPazienza/gravityrush_pc/releases)
+   and extract it anywhere (not inside the zip).
+2. Open **Gravity Rush Launcher.exe** (Windows may warn that the program is not signed: More info,
+   Run anyway), choose your game folder on the Game page and press **Play**.
+3. Later, **Gravity Rush.exe** starts the game straight away with the saved settings.
+
+The Video page sets the render resolution (up to 4K), shadow quality and the display options.
+To report a problem, press **F12** where you see it (the frames are saved in `user\screenshots`)
+and open an [issue](https://github.com/LucaPazienza/gravityrush_pc/issues) with them,
+`user\last_run.log` and where you were in the game.
 
 ## Building and Running
 
@@ -85,7 +108,7 @@ Not done yet / known gaps:
    `Gravity Rush Launcher.exe` and `Gravity Rush.exe` with `bash scripts/gr_build_launcher.sh`):
 
    ```powershell
-   $env:GOW3_GAME_DIR = 'D:\path\CUSA01113'   # or the .pkg
+   $env:GOW3_GAME_DIR = 'D:\path\CUSA01113'   # the game folder
    python run.py
    ```
 
@@ -97,7 +120,8 @@ The loader stops at the first PS4 system function the runtime does not implement
 | Runtime | `src/runtime_*.c`, `src/gr_*.inc` | PS4 system functions |
 | GPU and libraries | `gpu/shadps4/` | shadPS4 video core (Vulkan), font library and AvPlayer |
 | Preparation | `scripts/` | Reads `eboot.bin`, links the game's `libc` and `libSceFios2` |
-| Launcher | `launcher/gravityrush_launcher.py`, `launcher/launcher_ui.py` | Settings, PKG install, mods, controls and the play button |
+| Launcher | `launcher/gravityrush_launcher.py`, `launcher/launcher_ui.py` | Settings, controls and the play button |
+| Packaging | `packaging/windows/package.sh` | Builds the release zip (with the third-party licenses) |
 
 Please do not add proprietary game files, disc images, executables, firmware, or other copyrighted
 game data to this repository.

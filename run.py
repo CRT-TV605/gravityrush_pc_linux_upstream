@@ -99,10 +99,15 @@ def main():
         if clang64.is_dir():
             env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
 
-    game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA11227'))
+    game = Path(env.get('GOW3_GAME_DIR', PORT.parent / 'CUSA01113'))
     if game.suffix.lower() == '.pkg' and game.is_file():
         # A PKG is unpacked once beside it (<folder>/<TITLE_ID>); later starts reuse the folder.
-        import pkg_extract
+        # Release packages leave the unpacker out: the game folder is prepared by the player.
+        try:
+            import pkg_extract
+        except ImportError:
+            fail(f'{game.name} is a package: unpack it with your own tools and choose the game folder '
+                 '(the one with eboot.bin).')
         target = Path(env.get('GOW3_PKG_TARGET') or pkg_extract.default_target(game))
         if not pkg_extract.is_extracted(game, target):
             print(f'Unpacking {game.name} into {target} (first start only)…', flush=True)
@@ -119,7 +124,7 @@ def main():
                 fail(f'Could not unpack {game}: {error}')
         game = target
     if not (game / 'eboot.bin').is_file():
-        fail(f'No eboot.bin in {game} (set GOW3_GAME_DIR to the game folder or its .pkg).')
+        fail(f'No eboot.bin in {game} (choose the game folder: the one with eboot.bin, sce_module and sce_sys).')
     import game_profiles
     profile = game_profiles.profile(game)
     if profile['name']:

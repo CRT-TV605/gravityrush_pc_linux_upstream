@@ -110,6 +110,12 @@ _ROWS = [
      'Se usa en Pantalla completa. Sin bordes y Ventana siguen el ajuste de Windows.'),
     ('Unlimited', 'Libero', 'Illimité', 'Unbegrenzt', 'Sin límite'),
     ('IMAGE', 'IMMAGINE', 'IMAGE', 'BILD', 'IMAGEN'),
+    ('F12 closes the game', 'F12 chiude il gioco', 'F12 ferme le jeu', 'F12 beendet das Spiel', 'F12 cierra el juego'),
+    ('F12 always saves screenshots and the log for bug reports; this also closes the game right after.',
+     'F12 salva sempre screenshot e log per le segnalazioni; così chiude anche il gioco subito dopo.',
+     'F12 enregistre toujours captures et journal pour les rapports ; ceci ferme aussi le jeu juste après.',
+     'F12 speichert immer Screenshots und Log für Fehlerberichte; damit wird das Spiel danach auch beendet.',
+     'F12 siempre guarda capturas y registro para los informes; así también cierra el juego justo después.'),
     ('Shadow quality', 'Qualità ombre', 'Qualité des ombres', 'Schattenqualität', 'Calidad de sombras'),
     ('Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Estándar (2048)'),
     ('High (4096)', 'Alta (4096)', 'Élevée (4096)', 'Hoch (4096)', 'Alta (4096)'),
@@ -1523,6 +1529,9 @@ class LauncherWindow:
         self.sec(body, 'DEVELOPMENT')
         self.toggle_row(body, 'Validation layer', self.app.get('vk_validation', False),
                         lambda v: self.set_app('vk_validation', v), 'Vulkan checks for bug reports; slower.')
+        self.toggle_row(body, 'F12 closes the game', self.app.get('f12_quits', False),
+                        lambda v: self.set_app('f12_quits', v),
+                        'F12 always saves screenshots and the log for bug reports; this also closes the game right after.')
         self.sec(body, 'DATA')
         self.row(body, 'Launcher data folder', lambda c: ImageButton(self, c, t('Open'), lambda: self.open_path(
             str(self.logic.CONFIG_DIR))).widget.pack(side='right'))
@@ -1866,6 +1875,7 @@ class LauncherWindow:
         if log:
             log.write(f'\nThe game exited (code {code}).\n')
             log.close()
+        self.logic.convert_frame_dumps(self.user_dir())  # F12's frames as PNG files
         self.output.put((code,))
 
     def drain(self):

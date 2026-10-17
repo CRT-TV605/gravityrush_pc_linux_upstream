@@ -141,11 +141,11 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '
                 'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0', 'cheat_menu': '0', 'cheat_infinite_ammo': '0', 'ue4_upscale': 'off'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
-APP_DEFAULTS = {'ui_language': 'en', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'medieval' / 'CUSA11227')), 'user_dir': '',
+APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', ''), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '',
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
-                'vk_validation': False, 'close_on_play': False,
+                'vk_validation': False, 'close_on_play': False, 'f12_quits': False,
                 'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
                 'last_pkg': ''}
 
@@ -335,18 +335,18 @@ def game_environment(s):
         env['GOW3_GYRO_SENS'] = str(s['gyro_sens'])
     env.setdefault('GOW3_FPS_LOG', '1')  # FPS and worst frame every 5 s in the log (diagnostics)
     env.setdefault('GOW3_FRAME_STATS', '1')  # draws, compiles and stalls every 5 s (diagnostics)
-    # F12 in the game (or creating the trigger file) saves the next frame here, for bug reports.
-    # Each session gets its own folder (frame numbers restart at every start); one press saves
-    # 8 consecutive frames so flicker shows up between them.
+    # F12 in the game (or creating the trigger file) saves the next frames here, for bug reports
+    # (PNG files once the game has closed). Each session gets its own folder (frame numbers restart
+    # at every start); one press saves 2 consecutive frames, so a flicker shows up between them.
     shots = Path(s['user_dir'] or DATA_DIR / 'user') / 'screenshots'
     session = shots / time.strftime('%Y%m%d-%H%M%S')
     try:
         session.mkdir(parents=True, exist_ok=True)
         env.setdefault('GOW3_DUMP_DIR', str(session))
         env.setdefault('GOW3_FRAME_DUMP_TRIGGER', str(shots / 'trigger'))
-        env.setdefault('GOW3_FRAME_DUMP_COUNT', '8')
-        # F12 also closes the game once the frames are saved (the report ends at the problem).
-        env.setdefault('GOW3_F12_QUIT', '1')
+        env.setdefault('GOW3_FRAME_DUMP_COUNT', '2')
+        # Option: F12 also closes the game once the frames are saved (the report ends at the problem).
+        env.setdefault('GOW3_F12_QUIT', '1' if s.get('f12_quits') else '0')
         # Diagnostics: GPU optimizations switched off while playing, by writing a number here.
         env.setdefault('GOW3_TOGGLE_FILE', str(shots / 'toggles.txt'))
         # Frame analyzer: creating this file records how the next frame is drawn (render passes).
@@ -1083,7 +1083,11 @@ class Launcher:
             self.install_pkg(Path(chosen))
 
     def install_pkg(self, pkg):
-        import pkg_extract
+        try:
+            import pkg_extract
+        except ImportError:  # release packages: the player prepares the game folder
+            self.messagebox.showerror(APP_NAME, _('Unpack the .pkg with your own tools, then choose the game folder.'))
+            return
         try:
             target = Path(pkg_extract.default_target(pkg))
         except (OSError, ValueError) as error:
@@ -1610,7 +1614,7 @@ class Launcher:
             return
         self.collect()
         if not game_info(self.app['game_dir']):
-            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA11227), or install the .pkg.'))
+            self.messagebox.showerror(APP_NAME, _('Choose the game folder with eboot.bin (CUSA01113), or install the .pkg.'))
             self.show('game')
             return
         self.set_log('')
@@ -1854,6 +1858,26 @@ class GameJob:
             self.handle = None
 
 
+def convert_frame_dumps(user_dir):
+    """F12's raw frames (<name>_<n>_<width>x<height>.raw, 32-bit pixels) into PNG files a bug report
+    can carry; the raw files are removed once converted."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    for raw in Path(user_dir, 'screenshots').glob('*/*.raw'):
+        try:
+            width, height = (int(v) for v in raw.stem.rsplit('_', 1)[1].split('x'))
+            data = raw.read_bytes()
+            if len(data) < width * height * 4:
+                continue
+            Image.frombytes('RGBA', (width, height), data[:width * height * 4]).convert('RGB').save(
+                raw.with_suffix('.png'), optimize=True)
+            raw.unlink()
+        except (OSError, ValueError, IndexError):
+            pass
+
+
 def play_without_window(settings):
     """--play: the game with the saved settings (shortcuts, Steam). Output goes to the console
     when there is one and to <saves folder>/last_run.log."""
@@ -1871,7 +1895,9 @@ def play_without_window(settings):
                 sys.stdout.write(text)
             except (OSError, ValueError):
                 pass
-        return process.wait()
+        code = process.wait()
+    convert_frame_dumps(log_dir)
+    return code
 
 
 def version_tuple(text):

@@ -342,7 +342,7 @@ def is_extracted(pkg_path, out):
 
 
 def default_target(pkg_path):
-    """<folder of the PKG>/<TITLE_ID>, e.g. D:/games/CUSA11227."""
+    """<folder of the PKG>/<TITLE_ID>, e.g. D:/games/CUSA01113."""
     pkg = Pkg(pkg_path)
     title = pkg.content_id.split("-")[1].split("_")[0] if "-" in pkg.content_id else "game"
     return os.path.join(os.path.dirname(os.path.abspath(pkg_path)), title)

@@ -1,10 +1,14 @@
-Gravity Rush Remastered (PS4) for PC (gravityrush_pc)
-=====================================================
+Gravity Rush Remastered (PS4) for PC - version 0.1.0 (preview)
+===============================================================
 
-Work in progress: the game boots but does not get past the opening scene yet, and has no audio.
+A native PC port: the game's own code runs on your processor, with no emulator. This is an early
+preview: the opening, the first episode and the city of Hekseville have been played through on
+one PC; later parts of the game have not been tested yet.
 
-No game files are included. You need your own copy of Gravity Rush Remastered (PS4): CUSA01113,
-either as an unpacked folder (eboot.bin, sce_module, sce_sys) or as a fake package (.pkg).
+No game files are included. You need your own copy of Gravity Rush Remastered (PS4), as an
+unpacked game folder (eboot.bin, sce_module, sce_sys), prepared with your own tools. Tested with
+the European release CUSA01113, version 01.00. Other versions may start, but the resolution and
+shadow patches only apply to that one.
 
 You need
 - Windows 10 (1903 or newer) or Windows 11, 64-bit.
@@ -12,32 +16,48 @@ You need
 
 Start
 1. Extract this folder anywhere, for example C:\Games\gravityrush-windows (not inside the zip).
-2. Open "Gravity Rush Launcher.exe". If Windows shows "Windows protected your PC", click More info, then
-   Run anyway (the program is not signed).
-3. Game page:
-   - Install from PKG: "Choose .pkg..." unpacks the game once next to the .pkg (progress bar;
-     an interrupted unpack continues where it stopped), or
-   - Game folder: Browse... to the folder with eboot.bin.
-4. Press PLAY.
+2. Open "Gravity Rush Launcher.exe". If Windows shows "Windows protected your PC", click More info,
+   then Run anyway (the program is not signed).
+3. Game page: Browse... to your game folder (the one with eboot.bin).
+4. Press Play.
+
+Graphics (Video page)
+- Render resolution: native 1080p, 720p, 1440p, 1800p or 4K. Above your screen's size it works as
+  anti-aliasing (4K on a 1440p screen gives the cleanest image).
+- Shadow quality: Standard (the game's 2048) or High (4096).
+- Anisotropic filtering, window mode, refresh rate (fullscreen), vertical sync and FPS limit.
 
 While playing
-- Insert on the keyboard, or R3 + L2 on the controller, opens the port's menu (image,
-  performance, overlay).
-- Controller (DualSense, Xbox and others) and keyboard work; remap them on the Controls page.
-- Touchpad: Tab (left side), Backspace (right side), the controller's View button, or hold the
-  left mouse button over the window and drag.
+- Insert on the keyboard, or R3 + L2 on the controller, opens the port's menu (image, performance,
+  FPS overlay).
+- Controllers (DualSense, DualShock 4, Xbox and others) and keyboard work; remap them on the
+  Controls page. The DualSense / DualShock 4 gyro aims the camera like on the PS4.
+- Touchpad: Tab (left side), Backspace (right side), the controller's View button, or hold the left
+  mouse button over the window and drag.
 
 Next time
 - "Gravity Rush.exe" starts the game straight away with the saved settings (shortcut, Steam).
-- Saves, shader cache and the log: user\ next to the executables (keep it when updating).
+- Saves, shader cache and logs: user\ next to the executables (keep it when updating).
 - Settings: gravityrush.ini next to the executables; launcher options in %APPDATA%\gravityrush-launcher.
+
+Reporting a problem
+- Press F12 when you see it: the next frames are saved in user\screenshots, and the log notes where
+  the game was. Send them with user\last_run.log and a few words on where you were in the game.
+  (Advanced page: "F12 closes the game" also closes it right after, if you prefer.)
+- Reports: https://github.com/LucaPazienza/gravityrush_pc/issues
+
+Known issues
+- Some fixed camera shots at the start of the game can be framed wrongly (under investigation; the
+  gyro is the main suspect: try "Motion sensor" at its minimum in the game's settings).
+- A rare crash in the graphics command recorder has been seen once in a long session.
+- Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
+- Online features (PSN) are not available: the game runs as a console that is not signed in.
 
 If something goes wrong
 - Black screen at start: Advanced > Clear shader cache, then start again.
 - The game does not open: check the Log page, or send user\last_run.log with your report.
 
-Online features (PSN) are not available: the game runs as a console that is not signed in.
-
-This project is not affiliated with Sony Interactive Entertainment.
-Gravity Rush is a trademark of Sony Interactive Entertainment.
-Based on medievil_2019_pc_port and gow3_pc (GPL-2.0-or-later).
+This project is not affiliated with Sony Interactive Entertainment. Gravity Rush is a trademark of
+Sony Interactive Entertainment. Licensed under the GNU GPL v2 or later (LICENSE); third-party
+licenses are in THIRD-PARTY-LICENSES. Based on medievil_2019_pc_port, the God of War III native port
+(Waffle565/God-Of-War-Native-Port, FelipePrado0/gow3_pc) and the shadPS4 video core.
