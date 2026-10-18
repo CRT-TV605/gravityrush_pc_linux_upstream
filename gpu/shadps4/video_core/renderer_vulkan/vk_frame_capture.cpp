@@ -238,8 +238,12 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
                             entries.back().colors == targets);
     (void)new_pass;
     (void)display;
-    // Gravity Rush: everything the GPU draws between the second and the fourth flip after the
-    // request (two whole frames, wherever their passes start) is recorded.
+    // Gravity Rush: everything the GPU draws between the second flip after the request and
+    // GOW3_CAPTURE_FRAMES (default 2) flips later is recorded, wherever the passes start.
+    static const u64 frames = [] {
+        const char* env = std::getenv("GOW3_CAPTURE_FRAMES");
+        return env ? u64(std::clamp(std::atoi(env), 1, 600)) : u64(2);
+    }();
     const u64 flip = flips.load(std::memory_order_acquire);
     const u64 armed = armed_flip.load(std::memory_order_relaxed);
     if (state.load(std::memory_order_relaxed) == Armed && flip >= armed + 2) {
@@ -249,7 +253,7 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
         pass_open = false;
         state.store(Recording, std::memory_order_release);
     }
-    if (state.load(std::memory_order_relaxed) == Recording && flip >= armed + 4) {
+    if (state.load(std::memory_order_relaxed) == Recording && flip >= armed + 2 + frames) {
         Write(last_presented.load(std::memory_order_relaxed));
         entries.clear();
         pending_sampled.clear();
@@ -269,6 +273,11 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
     }
     entries.push_back({.compute = false, .colors = std::move(targets), .depth = d});
     pass_open = true;
+    static u64 marked_flip = ~u64(0);  // which frame each pass belongs to (long captures)
+    if (frames > 2 && flip != marked_flip) {
+        marked_flip = flip;
+        entries.back().note += "[flip " + std::to_string(flip - armed) + "]";
+    }
 }
 
 void FrameCapture::Draw(u64 vs_hash, u64 ps_hash, u32 num_indices, u32 num_instances) {

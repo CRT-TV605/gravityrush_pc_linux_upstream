@@ -637,6 +637,15 @@ bool PipelineCache::AsyncCompilation() const {
     return compiler && Gow3Settings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
+// gow3: a draw of at most 6 indices and one instance (a full-screen pass, a copy, a 2D quad) is
+// never skipped while its shaders or pipeline compile: such draws are often one-offs whose result
+// stays on screen (Gravity Rush draws the frame behind a dialogue into a capture target once; a
+// skipped draw left it black), and their pipelines build in milliseconds. Scene draws stay async.
+bool PipelineCache::MustCompileNow() const {
+    const auto& regs = *sel.regs;
+    return regs.num_indices <= 6 && regs.num_instances.NumInstances() <= 1;
+}
+
 void PipelineCache::SeedWorkerCaches() {
     if (!compiler || worker_caches_seeded) {
         return;
@@ -719,7 +728,9 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         return nullptr;
     }
-    if (AsyncCompilation() && !sel.regs->stage_enable.hs_en && !EmulatorSettings.IsShaderCollect()) {
+    const bool compile_now = MustCompileNow();
+    if (AsyncCompilation() && !compile_now && !sel.regs->stage_enable.hs_en &&
+        !EmulatorSettings.IsShaderCollect()) {
         const auto found = graphics_pipelines.find(sel.graphics_key);
         if (found != graphics_pipelines.end()) {
             return found->second.get();
@@ -756,6 +767,18 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         ++g_gow3_pending_draws;
         return nullptr;
+    }
+    if (const auto pending = pending_graphics.find(sel.graphics_key); pending != pending_graphics.end()) {
+        // Already compiling for an earlier (skipped) draw: this one waits for that build.
+        const auto build = pending->second;
+        {
+            PhaseTimer waiting{g_gow3_compile_wait_ns};
+            build->job.Wait();
+        }
+        PublishGraphics();
+        if (const auto found = graphics_pipelines.find(sel.graphics_key); found != graphics_pipelines.end()) {
+            return found->second.get();
+        }
     }
     const auto [it, is_new] = graphics_pipelines.try_emplace(sel.graphics_key);
     if (is_new) {
@@ -1215,7 +1238,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     auto it_pgm = program_cache.find(params.hash); // this thread is the only writer
     const bool compile_async = AsyncCompilation() && hw_stage != HwStage::Compute &&
                                !sel.regs->stage_enable.hs_en &&
-                               !EmulatorSettings.IsShaderCollect();
+                               !EmulatorSettings.IsShaderCollect() && !MustCompileNow();
     if (!compile_async && it_pgm != program_cache.end() && it_pgm->second->pending) {
         {
             PhaseTimer waiting{g_gow3_compile_wait_ns};

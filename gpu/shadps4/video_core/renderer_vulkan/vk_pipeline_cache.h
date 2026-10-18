@@ -193,6 +193,8 @@ private:
     void StopWarmUp();
     bool AsyncCompilation() const;
     bool RefreshGraphicsKey(PipelineSelection& sel);
+    /// gow3: the current draw is small (a full-screen pass, a copy, a 2D quad): compiled at once.
+    bool MustCompileNow() const;
     bool RefreshGraphicsStages(PipelineSelection& sel);
     bool RefreshComputeKey();
 
