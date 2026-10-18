@@ -479,12 +479,14 @@ void PerformanceTab() {
         // God of War III: a resolution patch. Unreal Engine 4 games: the scene scale.
         static const char* const resolution_labels[] = {
             "Native (1080p)", "480p", "720p", "1440p", "1800p", "4K",
-            "720p native output", "1440p native output", "1800p native output", "4K native output"};
+            "720p native output", "1440p native output", "1800p native output", "4K native output",
+            "540p", "648p", "864p", "972p", "1296p"};
         if (Common::ElfInfo::Instance().GameSerial().starts_with("CUSA01113")) {
             // Gravity Rush Remastered: the resolution patches of patches/CUSA01113.xml.
-            static const char* const gr_labels[] = {"Native (1080p)", "720p", "1440p", "1800p", "4K"};
-            static const int gr_values[] = {0, 2, 3, 4, 5};
-            ChoiceRow("Render resolution", s.render_resolution, gr_labels, gr_values, 5,
+            static const char* const gr_labels[] = {"540p", "648p", "720p", "864p", "972p", "Native (1080p)",
+                                                    "1296p", "1440p", "1800p", "4K"};
+            static const int gr_values[] = {10, 11, 2, 12, 13, 0, 14, 3, 4, 5};
+            ChoiceRow("Render resolution", s.render_resolution, gr_labels, gr_values, 10,
                       "The size the game draws at. Above the screen's it works as anti-aliasing.");
         } else {
             ChoiceRow("Render resolution", s.render_resolution, resolution_labels, nullptr,

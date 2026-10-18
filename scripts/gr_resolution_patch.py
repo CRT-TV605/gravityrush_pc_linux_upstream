@@ -35,7 +35,11 @@ SITES = [
 ]
 ORIGINAL = {'W': 1920, 'H': 1080, 'w': 960, 'h': 540, 'hh': 544}
 # Name suffix (graphics_options.RESOLUTIONS) -> output size.
-RESOLUTIONS = {'720p': (1280, 720), '1440p': (2560, 1440), '1800p': (3200, 1800), '4K': (3840, 2160)}
+# The other sizes serve the launcher's upscaling modes (FSR 3.1 / DLSS quality, balanced, performance
+# for 1080p, 1440p and 2160p screens): exact 16:9, widths a multiple of 64 like the verified ones.
+RESOLUTIONS = {'720p': (1280, 720), '1440p': (2560, 1440), '1800p': (3200, 1800), '4K': (3840, 2160),
+               '540p': (960, 540), '648p': (1152, 648), '864p': (1536, 864), '972p': (1728, 972),
+               '1296p': (2304, 1296)}
 
 
 # Pixel shaders that turn a pixel's screen position into texture coordinates with literal

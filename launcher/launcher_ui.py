@@ -334,6 +334,15 @@ _ROWS = [
     ('This folder is read-only, so the launcher cannot update itself here. Download the new version from the releases page.', 'Questa cartella è in sola lettura: il launcher non può aggiornarsi qui. Scarica la nuova versione dalla pagina delle release.', 'Ce dossier est en lecture seule : le lanceur ne peut pas se mettre à jour ici. Téléchargez la nouvelle version depuis la page des versions.', 'Dieser Ordner ist schreibgeschützt, daher kann sich der Launcher hier nicht aktualisieren. Lade die neue Version von der Release-Seite herunter.', 'Esta carpeta es de solo lectura, así que el lanzador no puede actualizarse aquí. Descarga la nueva versión desde la página de versiones.'),
     ('Open the page', 'Apri la pagina', 'Ouvrir la page', 'Seite öffnen', 'Abrir la página'),
     ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
+    # Upscaling modes.
+    ('Mode', 'Modalità', 'Mode', 'Modus', 'Modo'),
+    ('Native', 'Nativa', 'Native', 'Nativ', 'Nativa'),
+    ('DLAA', 'DLAA', 'DLAA', 'DLAA', 'DLAA'),
+    ('Quality', 'Qualità', 'Qualité', 'Qualität', 'Calidad'),
+    ('Balanced', 'Bilanciato', 'Équilibré', 'Ausgewogen', 'Equilibrado'),
+    ('Performance', 'Prestazioni', 'Performances', 'Leistung', 'Rendimiento'),
+    ('Draws at your screen’s size ({}): anti-aliasing only, the sharpest image.', 'Disegna alla misura del tuo schermo ({}): solo anti-aliasing, l’immagine più nitida.', 'Dessine à la taille de votre écran ({}) : anticrénelage seul, l’image la plus nette.', 'Zeichnet in der Größe deines Bildschirms ({}): nur Kantenglättung, das schärfste Bild.', 'Dibuja al tamaño de tu pantalla ({}): solo antialiasing, la imagen más nítida.'),
+    ('Draws at {} and enlarges to your {} screen. Quality is the sharpest, Performance the fastest.', 'Disegna a {} e ingrandisce fino al tuo schermo {}. Qualità è la più nitida, Prestazioni la più veloce.', 'Dessine en {} et agrandit jusqu’à votre écran {}. Qualité est le plus net, Performances le plus rapide.', 'Zeichnet in {} und vergrößert auf deinen {}-Bildschirm. Qualität ist am schärfsten, Leistung am schnellsten.', 'Dibuja a {} y amplía hasta tu pantalla de {}. Calidad es la más nítida, Rendimiento la más rápida.'),
     # Video page: per-mode anti-aliasing hints, sections, footer note.
     ("FXAA: the game's own edge smoothing, as on the PS4. The lightest.", 'FXAA: lo smussamento dei bordi del gioco, come su PS4. Il più leggero.', 'FXAA : le lissage des contours du jeu, comme sur PS4. Le plus léger.', 'FXAA: die spieleigene Kantenglättung, wie auf der PS4. Am leichtesten.', 'FXAA: el suavizado de bordes del propio juego, como en PS4. El más ligero.'),
     ('TAA: smooths edges over several frames, steadier than FXAA, a little softer.', 'TAA: smussa i bordi su più fotogrammi, più stabile di FXAA, un po’ più morbido.', 'TAA : lisse les contours sur plusieurs images, plus stable que FXAA, un peu plus doux.', 'TAA: glättet Kanten über mehrere Bilder, ruhiger als FXAA, etwas weicher.', 'TAA: suaviza los bordes a lo largo de varios fotogramas, más estable que FXAA, algo más suave.'),
@@ -429,8 +438,35 @@ GAME_LANGUAGES = [('5', 'Italian'), ('1', 'English'), ('2', 'French'), ('4', 'Ge
 WINDOW_MODES = [('windowed', 'Windowed'), ('fullscreen', 'Fullscreen'), ('borderless', 'Borderless')]
 FPS_CHOICES = [('30', '30'), ('60', '60'), ('120', '120'), ('0', 'Unlimited')]
 # Render resolution patches (patches/CUSA01113.xml, scripts/gr_resolution_patch.py).
-RESOLUTION_CHOICES = [('native', 'Native (1080p)'), ('720p', '720p (faster)'), ('1440p', '1440p'),
-                      ('1800p', '1800p'), ('4K', '4K')]
+RESOLUTION_CHOICES = [('540p', '540p'), ('648p', '648p'), ('720p', '720p'), ('864p', '864p'), ('972p', '972p'),
+                      ('native', 'Native (1080p)'), ('1296p', '1296p'), ('1440p', '1440p'), ('1800p', '1800p'),
+                      ('4K', '4K')]
+RESOLUTION_SIZES = {'540p': (960, 540), '648p': (1152, 648), '720p': (1280, 720), '864p': (1536, 864),
+                    '972p': (1728, 972), 'native': (1920, 1080), '1296p': (2304, 1296), '1440p': (2560, 1440),
+                    '1800p': (3200, 1800), '4K': (3840, 2160)}
+# FSR 3.1 / DLSS modes: the render resolution for a 1080p, 1440p or 2160p screen (patches/CUSA01113.xml
+# has these sizes): native 1x, quality ~1.5x, balanced ~1.7x, performance 2x.
+UPSCALE_MODES = ('native', 'quality', 'balanced', 'performance')
+MODE_RESOLUTIONS = {1080: ('native', '720p', '648p', '540p'),
+                    1440: ('1440p', '972p', '864p', '720p'),
+                    2160: ('4K', '1440p', '1296p', 'native')}
+
+
+def screen_size():
+    """The main display's resolution (Windows), or 1920x1080."""
+    try:
+        user32 = ctypes.windll.user32
+        dc = user32.GetDC(0)
+        width, height = ctypes.windll.gdi32.GetDeviceCaps(dc, 118), ctypes.windll.gdi32.GetDeviceCaps(dc, 117)
+        user32.ReleaseDC(0, dc)  # DESKTOPHORZRES / DESKTOPVERTRES: physical pixels, whatever the scaling
+        return (width, height) if width and height else (1920, 1080)
+    except (AttributeError, OSError):
+        return (1920, 1080)
+
+
+def mode_table():
+    height = screen_size()[1]
+    return MODE_RESOLUTIONS[min(MODE_RESOLUTIONS, key=lambda h: abs(h - height))]
 # Anti-aliasing: the game's FXAA, a temporal pass on the scene (gravityrush.ini upscaler; it replaces
 # the FXAA while it runs), or none. DLAA only when the DLSS libraries are installed.
 AA_CHOICES = [('fxaa', 'FXAA (as on PS4)'), ('taa', 'TAA'), ('fsr3', 'FSR 3.1'), ('off', 'Off')]
@@ -1693,10 +1729,28 @@ class LauncherWindow:
         current = self.ini.get('render_resolution', 'native')
         if current not in dict(RESOLUTION_CHOICES):
             current = 'native'
-        self.row(body, 'Render resolution',
-                 lambda c: self.choice(c, RESOLUTION_CHOICES, current,
-                                       lambda v: self.set_ini('render_resolution', v), 16).pack(side='right'),
-                 'The size the game draws at. Lower than your screen runs faster.')
+        if mode in ('fsr3', 'dlss'):
+            table = mode_table()
+            chosen = UPSCALE_MODES[table.index(current)] if current in table else ''
+            labels = [('native', 'DLAA' if mode == 'dlss' else 'Native'), ('quality', 'Quality'),
+                      ('balanced', 'Balanced'), ('performance', 'Performance')]
+
+            def set_mode(name):
+                self.ini['render_resolution'] = table[UPSCALE_MODES.index(name)]
+                self.save()
+                self.reopen_page()
+            w, h = RESOLUTION_SIZES[current]
+            sw, sh = screen_size()
+            hint = t('Draws at your screen’s size ({}): anti-aliasing only, the sharpest image.').format(f'{w}x{h}') \
+                if chosen == 'native' else \
+                t('Draws at {} and enlarges to your {} screen. Quality is the sharpest, Performance the fastest.') \
+                .format(f'{w}x{h}', f'{sw}x{sh}')
+            self.row(body, 'Mode', lambda c: Segments(self, c, labels, chosen, set_mode).widget.pack(side='right'), hint)
+        else:
+            self.row(body, 'Render resolution',
+                     lambda c: self.choice(c, RESOLUTION_CHOICES, current,
+                                           lambda v: self.set_ini('render_resolution', v), 16).pack(side='right'),
+                     'The size the game draws at. Lower than your screen runs faster.')
         if mode not in TEMPORAL_AA or mode == 'taa':
             # FSR 1.0 and its sharpening act only without FSR 3.1 / DLSS (they enlarge on their own).
             self.row(body, 'Simple upscaler',

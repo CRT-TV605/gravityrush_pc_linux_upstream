@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 
 RESOLUTIONS = ('native', '480p', '720p', '1440p', '1800p', '4K',
-               '720p_native', '1440p_native', '1800p_native', '4K_native')
+               '720p_native', '1440p_native', '1800p_native', '4K_native',
+               '540p', '648p', '864p', '972p', '1296p')  # upscaling modes (launcher)
 ENGINE_FPS = (60, 120, 240)
 DEFAULTS = {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
             'stale_readback': '1', 'async_shaders': '1', 'shadow_quality': 'standard'}
