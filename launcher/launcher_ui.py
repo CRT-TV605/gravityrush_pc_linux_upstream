@@ -334,6 +334,27 @@ _ROWS = [
     ('This folder is read-only, so the launcher cannot update itself here. Download the new version from the releases page.', 'Questa cartella è in sola lettura: il launcher non può aggiornarsi qui. Scarica la nuova versione dalla pagina delle release.', 'Ce dossier est en lecture seule : le lanceur ne peut pas se mettre à jour ici. Téléchargez la nouvelle version depuis la page des versions.', 'Dieser Ordner ist schreibgeschützt, daher kann sich der Launcher hier nicht aktualisieren. Lade die neue Version von der Release-Seite herunter.', 'Esta carpeta es de solo lectura, así que el lanzador no puede actualizarse aquí. Descarga la nueva versión desde la página de versiones.'),
     ('Open the page', 'Apri la pagina', 'Ouvrir la page', 'Seite öffnen', 'Abrir la página'),
     ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
+    # Inkfall functions: detected game, backups, play time, exit diagnosis.
+    ('DETECTED GAME', 'GIOCO RILEVATO', 'JEU DÉTECTÉ', 'ERKANNTES SPIEL', 'JUEGO DETECTADO'),
+    ('Title', 'Titolo', 'Titre', 'Titel', 'Título'),
+    ('Code', 'Codice', 'Code', 'Code', 'Código'),
+    ('Version', 'Versione', 'Version', 'Version', 'Versión'),
+    ('Status', 'Stato', 'État', 'Status', 'Estado'),
+    ('Found, ready to play', 'Trovato, pronto per giocare', 'Trouvé, prêt à jouer', 'Gefunden, spielbereit', 'Encontrado, listo para jugar'),
+    ('Not found: choose the folder that contains eboot.bin', 'Non trovato: scegli la cartella che contiene eboot.bin', 'Introuvable : choisissez le dossier qui contient eboot.bin', 'Nicht gefunden: wähle den Ordner, der eboot.bin enthält', 'No encontrado: elige la carpeta que contiene eboot.bin'),
+    ('Back up before every start', 'Backup prima di ogni avvio', 'Sauvegarde avant chaque lancement', 'Sicherung vor jedem Start', 'Copia antes de cada inicio'),
+    ('Copies your saves before the game starts, so you can always go back.', 'Copia i salvataggi prima che il gioco parta, così puoi sempre tornare indietro.', 'Copie vos sauvegardes avant le lancement du jeu : vous pouvez toujours revenir en arrière.', 'Kopiert deine Spielstände vor dem Spielstart, damit du immer zurück kannst.', 'Copia tus partidas antes de que empiece el juego, para poder volver atrás siempre.'),
+    ('Backups to keep', 'Backup da tenere', 'Sauvegardes à garder', 'Zu behaltende Sicherungen', 'Copias a conservar'),
+    ('The oldest ones are deleted.', 'I più vecchi vengono eliminati.', 'Les plus anciennes sont supprimées.', 'Die ältesten werden gelöscht.', 'Las más antiguas se borran.'),
+    ('Back up now', 'Crea backup ora', 'Sauvegarder maintenant', 'Jetzt sichern', 'Copiar ahora'),
+    ('Backup created', 'Backup creato', 'Sauvegarde créée', 'Sicherung erstellt', 'Copia creada'),
+    ('No saves to back up yet', 'Ancora nessun salvataggio da copiare', 'Pas encore de sauvegarde à copier', 'Noch keine Spielstände zum Sichern', 'Aún no hay partidas que copiar'),
+    ('Newest first. Restoring backs up the current saves first.', 'I più recenti in alto. Il ripristino copia prima i salvataggi attuali.', 'Les plus récentes en haut. La restauration copie d’abord les sauvegardes actuelles.', 'Die neuesten oben. Beim Wiederherstellen werden die aktuellen Spielstände zuerst gesichert.', 'Las más recientes arriba. Al restaurar, primero se copian las partidas actuales.'),
+    ('Play time · {}', 'Tempo di gioco · {}', 'Temps de jeu · {}', 'Spielzeit · {}', 'Tiempo de juego · {}'),
+    ('The game closed right away', 'Il gioco si è chiuso subito', 'Le jeu s’est fermé tout de suite', 'Das Spiel wurde sofort beendet', 'El juego se cerró enseguida'),
+    ('The game closed unexpectedly', 'Il gioco si è chiuso in modo inatteso', 'Le jeu s’est fermé de façon inattendue', 'Das Spiel wurde unerwartet beendet', 'El juego se cerró de forma inesperada'),
+    ('Exit code {}. Its last messages:', 'Codice di uscita {}. Gli ultimi messaggi:', 'Code de sortie {}. Ses derniers messages :', 'Exit-Code {}. Die letzten Meldungen:', 'Código de salida {}. Sus últimos mensajes:'),
+    ('Open the log', 'Apri il log', 'Ouvrir le journal', 'Protokoll öffnen', 'Abrir el registro'),
     ('Close the game before updating.', 'Chiudi il gioco prima di aggiornare.', 'Fermez le jeu avant la mise à jour.', 'Schließe das Spiel vor dem Update.', 'Cierra el juego antes de actualizar.'),
     ('Updated to version {}', 'Aggiornato alla versione {}', 'Mis à jour vers la version {}', 'Auf Version {} aktualisiert', 'Actualizado a la versión {}'),
 ]
@@ -1109,7 +1130,7 @@ NAV_ICONS = {'game': 'folder', 'video': 'monitor', 'controls': 'gamepad', 'advan
 # dialogs and notices stay right of the sidebar, so nothing ever covers the menu.
 BRAND_X, BRAND_Y = 22, 26
 NAV_X, NAV_Y, NAV_W, NAV_H, NAV_GAP = 12, 104, 248, 44, 4
-STATUS_X, STATUS_Y, STATUS_W = 28, 468, 220
+STATUS_X, STATUS_Y, STATUS_W = 28, 446, 220
 PLAY_X, PLAY_Y, PLAY_W, PLAY_H = 24, 574, 224, 54
 PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 296, 52, 800, 624
 CONTENT_CX = (SIDEBAR_W + W) / 2
@@ -1372,6 +1393,10 @@ class LauncherWindow:
         self.anim.add(360, rise, ease_out, delay_ms=220)
 
     # ---- status ----------------------------------------------------------------------------
+    def play_time(self):
+        seconds = int(self.app.get('play_seconds', 0) or 0)
+        return f'{seconds // 3600} h {seconds % 3600 // 60:02d} min'
+
     def refresh_status(self):
         """The sidebar's status lines: the game folder, the newest save, the display settings."""
         for item in self.status_items:
@@ -1391,7 +1416,8 @@ class LauncherWindow:
         rows = [(t('Game found · all ready'), 'check', OK_C) if found else (t('Choose the game folder'), 'alert', WARN_C),
                 (t('Last save · {}').format(time.strftime('%d/%m %H:%M', time.localtime(newest))) if newest
                  else t('No saves yet'), 'clock', TEXT3),
-                (display, 'monitor', TEXT3)]
+                (display, 'monitor', TEXT3),
+                (t('Play time · {}').format(self.play_time()), 'clock', TEXT3)]
         self.status_photos = []
         y = STATUS_Y
         for index, (text, icon, color) in enumerate(rows):
@@ -1577,6 +1603,22 @@ class LauncherWindow:
         self.sec(body, 'FOLDERS', first=True)
         self.folder_row(body, 'Game folder', 'game_dir', 'Your game dump (eboot.bin, sce_module, sce_sys).')
         self.folder_row(body, 'Saves folder', 'user_dir', 'Empty: the launcher data folder (it also holds the shader cache).')
+        self.sec(body, 'DETECTED GAME')
+        found = logic.game_info(self.app['game_dir'])
+        if found:
+            try:
+                title_id = logic.game_profile_of(self.app['game_dir'])[0] or '—'
+            except Exception:
+                title_id = '—'
+            details = [('Title', found[0]), ('Code', title_id), ('Version', found[1])]
+        else:
+            details = []
+        for title, value in details:
+            self.row(body, title, lambda c, v=value: self.tk.Label(c, text=v, bg=CARD, fg=TEXT2,
+                                                                  font=self.font(14)).pack(side='right'))
+        self.row(body, 'Status', lambda c: self.tk.Label(
+            c, text=t('Found, ready to play') if found else t('Not found: choose the folder that contains eboot.bin'),
+            bg=CARD, fg=OK_C if found else WARN_C, font=self.font(14, 'bold')).pack(side='right'))
         self.sec(body, 'SHORTCUTS')
         self.hint(body, 'Gravity Rush starts the game with the saved settings, Gravity Rush Launcher opens this window.')
         self.buttons(body, [('Create desktop shortcuts', self.shortcut)])
@@ -1586,15 +1628,23 @@ class LauncherWindow:
 
         def make(control):
             if names:
-                self.choice(control, [(n, n) for n in names], self.backup_choice,
+                def when(name):  # 20261018-204037 -> 18/10/2026 20:40
+                    return f'{name[6:8]}/{name[4:6]}/{name[:4]} {name[9:11]}:{name[11:13]}' if len(name) >= 13 else name
+                self.choice(control, [(n, when(n)) for n in names], self.backup_choice,
                             lambda n: setattr(self, 'backup_choice', n), 16).pack(side='left')
             else:
                 self.tk.Label(control, text='—', bg=PAPER, fg=MU, font=self.font(14)).pack(side='left')
             ImageButton(self, control, t('Restore'), self.ask_restore).widget.pack(side='left', padx=(self.px(8), 0))
-            ImageButton(self, control, t('Refresh'), lambda: self.open_page('game')).widget.pack(side='left', padx=(self.px(8), 0))
-        self.row(body, 'Save backups', make,
-                 t('Made before every start, newest first: the last {} are kept. Restoring backs up the current saves first.')
-                 .format(logic.save_backup.KEEP))
+        self.toggle_row(body, 'Back up before every start', self.app.get('save_backup', True),
+                        lambda v: self.set_app('save_backup', v),
+                        'Copies your saves before the game starts, so you can always go back.')
+        self.row(body, 'Backups to keep',
+                 lambda c: Segments(self, c, [('5', '5'), ('10', '10'), ('20', '20')],
+                                    str(self.app.get('save_backup_keep', 10)),
+                                    lambda v: self.set_app('save_backup_keep', int(v))).widget.pack(side='right'),
+                 'The oldest ones are deleted.')
+        self.row(body, 'Save backups', make, 'Newest first. Restoring backs up the current saves first.')
+        self.buttons(body, [('Back up now', self.backup_now)])
         self.sec(body, 'LANGUAGE')
         self.row(body, 'Game language', lambda c: self.choice(c, GAME_LANGUAGES, str(self.app.get('language', '1')),
                                                              lambda v: self.set_app('language', v), 14).pack(side='right'))
@@ -1894,10 +1944,23 @@ class LauncherWindow:
         self.modal(t('Restore saves?'), t('The current saves are backed up first.'),
                    [('Cancel', self.close_modal, False), ('Restore', self.restore_backup, True)])
 
+    def backup_now(self):
+        if self.process:
+            self.toast(t('Close the game first.'))
+            return
+        try:
+            made = self.logic.save_backup.backup(self.user_dir(), keep=int(self.app.get('save_backup_keep', 10)))
+        except OSError as error:
+            self.toast(t('Could not: {}').format(error))
+            return
+        self.toast(t('Backup created') if made else t('No saves to back up yet'))
+        self.open_page('game')
+
     def restore_backup(self):
         self.close_modal()
         try:
-            self.logic.save_backup.restore(self.user_dir(), self.backup_choice)
+            self.logic.save_backup.restore(self.user_dir(), self.backup_choice,
+                                           keep=int(self.app.get('save_backup_keep', 10)))
             self.toast(t('Saves restored'))
         except (OSError, ValueError) as error:
             self.toast(t('Could not: {}').format(error))
@@ -2146,6 +2209,8 @@ class LauncherWindow:
             self.toast(t('Could not: {}').format(error))
             return
         self.job = logic.GameJob(self.process)
+        self.started_at = time.time()
+        self.reached_game = False
         threading.Thread(target=self.read_output, args=(self.process,), daemon=True).start()
         self.modal(t('Starting…'), t('Preparing the game'), [], gauge=True)
 
@@ -2205,6 +2270,7 @@ class LauncherWindow:
     def in_game(self):
         if not self.process:
             return
+        self.reached_game = True
         self.modal(t('In game'), t('The game is running in its own window.'),
                    [('Stop the game', self.stop_game, False), ('Close the launcher', self.quit, True)])
         # The game plays in its own window: the launcher steps aside to the taskbar (where it shows
@@ -2235,11 +2301,26 @@ class LauncherWindow:
             self.job = None
         # The in-game menu may have changed gravityrush.ini: later saves start from the file.
         self.ini, self.ini_lines = self.logic.load_ini()
+        played = time.time() - getattr(self, 'started_at', time.time())
+        if getattr(self, 'reached_game', False):
+            self.app['play_seconds'] = int(self.app.get('play_seconds', 0) or 0) + int(played)
+            self.save()
         self.close_modal()
         self.refresh_status()
         if getattr(self, 'stepped_aside', False):
             self.stepped_aside = False
             self.come_back()
+        # Closing the window ends the game with code 0; anything else, or a game that never got
+        # going, shows its last messages.
+        if code != 0 or not getattr(self, 'reached_game', False):
+            tail = ''.join(line for line in self.log_lines[-200:] if line.strip())
+            last = [line.rstrip() for line in tail.splitlines() if line.strip()][-6:]
+            title = t('The game closed unexpectedly') if getattr(self, 'reached_game', False) else \
+                t('The game closed right away')
+            self.modal(title, t('Exit code {}. Its last messages:').format(code) + '\n\n' + '\n'.join(last)[-700:],
+                       [('Close', self.close_modal, False),
+                        ('Open the log', lambda: (self.close_modal(), self.open_page('log')), True)])
+            return
         self.toast(t('The game exited.'))
 
 

@@ -218,7 +218,9 @@ def main():
         env.setdefault('GOW3_GPU_USER_DIR', str(user_dir))
         from save_backup import backup
         try:
-            if made := backup(user_dir):
+            # The launcher's choices: GOW3_SAVE_BACKUP=0 turns it off, GOW3_SAVE_BACKUP_KEEP how many stay.
+            keep = int(env.get('GOW3_SAVE_BACKUP_KEEP', '10') or 10)
+            if env.get('GOW3_SAVE_BACKUP', '1') != '0' and (made := backup(user_dir, keep=keep)):
                 print(f'Saves backed up to {made}', flush=True)
         except OSError as error:
             print(f'Save backup failed, starting anyway: {error}', flush=True)

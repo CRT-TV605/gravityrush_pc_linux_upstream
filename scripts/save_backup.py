@@ -54,7 +54,7 @@ def backup(user_dir, now=None, keep=KEEP):
     return made
 
 
-def restore(user_dir, name, now=None):
+def restore(user_dir, name, now=None, keep=KEEP):
     """Replaces savedata with backup `name`; returns the backup of the saves it replaced."""
     if not name or name not in list_backups(user_dir):
         raise ValueError(f'No save backup named {name!r}')
@@ -67,6 +67,6 @@ def restore(user_dir, name, now=None):
     shutil.copytree(source, staging)
     shutil.rmtree(savedata, ignore_errors=True)
     staging.rename(savedata)
-    _prune(user_dir)
+    _prune(user_dir, keep)
     return safety
 
