@@ -1,4 +1,4 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.1 (preview)
+Gravity Rush Remastered (PS4) for PC - version 0.1.2 (preview)
 ===============================================================
 
 A native PC port: the game's own code runs on your processor, with no emulator. This is an early

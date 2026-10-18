@@ -20,7 +20,7 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: public preview (0.1.1) — the opening, the first episode and the city work,
+**Status: public preview (0.1.2) — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
 **[Download the latest preview](https://github.com/LucaPazienza/gravityrush_pc/releases)** —

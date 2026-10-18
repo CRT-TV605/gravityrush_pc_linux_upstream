@@ -46,7 +46,7 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # (Advanced > Updates) and installs it when the player agrees. Every release so far is a preview,
 # so pre-releases count. Tests: GR_UPDATE_API serves another release list, GR_UPDATE_TEST_FROM
 # makes this build compare as an older version.
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 RELEASES_API = os.environ.get('GR_UPDATE_API') or \
     'https://api.github.com/repos/LucaPazienza/gravityrush_pc/releases?per_page=20'
 RELEASES_PAGE = 'https://github.com/LucaPazienza/gravityrush_pc/releases'
