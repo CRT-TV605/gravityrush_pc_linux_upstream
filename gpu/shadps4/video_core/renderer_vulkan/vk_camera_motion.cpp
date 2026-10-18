@@ -298,10 +298,18 @@ void CameraMotion::OnConstants(const float* data) {
     frame_has_camera = true;
 }
 
-bool CameraMotion::OnGravityRushCamera(const float* data, float yscale, float zscale,
+bool CameraMotion::OnGravityRushCamera(const float* source, float yscale, float zscale,
                                        float zoffset) {
-    const float* v = data;       // view = (world, 1) * V
-    const float* vp = data + 16; // clip = (world, 1) * VP
+    // Called for every scene draw: the first one of a frame is the main camera. The constants
+    // live in write-combined memory, slow to read: nothing is read once the camera is known
+    // (reading them for each of ~750 draws a frame took most of the recording thread's time).
+    if (frame_has_camera) {
+        return true;
+    }
+    std::array<float, 32> data;
+    std::memcpy(data.data(), source, sizeof(data));
+    const float* v = data.data();       // view = (world, 1) * V
+    const float* vp = data.data() + 16; // clip = (world, 1) * VP
     // An affine view, and a clip w of minus view z (a perspective camera looking down -z).
     if (v[3] != 0.0f || v[7] != 0.0f || v[11] != 0.0f || v[15] != 1.0f) {
         return false;
@@ -311,9 +319,6 @@ bool CameraMotion::OnGravityRushCamera(const float* data, float yscale, float zs
         if (std::abs(vp[r * 4 + 3] + z) > 1e-3f * (1.0f + std::abs(z))) {
             return false;
         }
-    }
-    if (frame_has_camera) {
-        return true; // the first one of a frame is the main camera
     }
     std::array<double, 16> inv{};
     if (!Invert4(v, inv)) {

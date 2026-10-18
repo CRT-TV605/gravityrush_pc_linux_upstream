@@ -383,6 +383,11 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
+    // gow3: on the GPU command thread, the draw recording thread may still be recording this
+    // frame's draws into the same scheduler: both recording at once crashed the NVIDIA driver
+    // (vkCmdEndRendering, null+0x130) and showed half-recorded frames. Wait for it first (no-op
+    // on the recording thread itself).
+    rasterizer->DrainDrawPipe(DrawPipe::ReasonCommands);
     // gow3: GOW3_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
     // guest display buffer and presented image are written to GOW3_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels (menus and movies included; the upscaler dumps scene frames only).
@@ -562,6 +567,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 }
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
+    if (!present_thread) {
+        rasterizer->DrainDrawPipe(DrawPipe::ReasonCommands); // as in PrepareFrame
+    }
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
 
