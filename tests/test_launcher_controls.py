@@ -7,12 +7,6 @@ import gravityrush_launcher as launcher  # noqa: E402
 
 
 class ControlMapTest(unittest.TestCase):
-    def test_new_cheats_default_to_disabled(self):
-        self.assertEqual(launcher.INI_DEFAULTS['cheat_double_jumps'], '0')
-        self.assertEqual(launcher.INI_DEFAULTS['cheat_very_hard'], '0')
-        self.assertIn('cheat_double_jumps', launcher.INI_FLAGS)
-        self.assertIn('cheat_very_hard', launcher.INI_FLAGS)
-
     def test_pipeline_binary_cache_switch(self):
         settings = {**launcher.APP_DEFAULTS}
         self.assertTrue(settings['pipeline_binary_cache'])
@@ -83,11 +77,6 @@ class ControlMapTest(unittest.TestCase):
 
 
 class ReleaseVersionTest(unittest.TestCase):
-    def test_god_of_war_release_is_newer_than_the_inherited_tags(self):
-        self.assertEqual(launcher.VERSION, '2.1.3')
-        self.assertGreater(launcher.version_tuple(launcher.VERSION), launcher.version_tuple('windows-v1.5'))
-        self.assertGreater(launcher.version_tuple('windows-v2.2'), launcher.version_tuple(launcher.VERSION))
-
     def test_first_start_is_in_english(self):
         # The translations are partial; 'System' stays a choice in Advanced.
         self.assertEqual(launcher.APP_DEFAULTS['ui_language'], 'en')

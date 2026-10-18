@@ -129,31 +129,8 @@ def main():
     profile = game_profiles.profile(game)
     if profile['name']:
         print(f'Game profile: {profile["name"]} ({", ".join(profile["modules"])})', flush=True)
-    engine_fps = int(graphics['engine_fps'])
-    if profile.get('ue4_render_scale') and engine_fps > 60:
-        # Unreal Engine 4 flips at every vblank (rhi.SyncInterval 1). A 480 Hz vblank with a frame
-        # limit shows each frame when it is ready: a 120 Hz vblank turned 9 ms frames into 17 ms.
-        env.setdefault('GOW3_VBLANK_HZ', '0')
-        env.setdefault('GOW3_FPS_CAP', str(engine_fps))
-    if profile.get('ue4_render_scale'):
-        import ue4_override
-        # Native output: the runtime sets the game's r.SetRes live once it runs (runtime_extra.c).
-        if output := ue4_override.NATIVE_OUTPUT.get(graphics['render_resolution']):
-            env.setdefault('GOW3_UE4_SETRES', output)
     for key, value in profile['env'].items():
         env.setdefault(key, value)
-    profile_ue4 = bool(profile.get('ue4_render_scale'))
-    if profile_ue4:
-        import ue4_override
-        try:
-            ini = graphics_options.read_ini(env['GOW3_CONFIG'])
-            print('Render resolution:', ue4_override.apply(game, graphics['render_resolution'],
-                                                           ini.get('ue4_quality', 'console'), engine_fps,
-                                                           ini.get('cheat_menu') == '1',
-                                                           ini.get('cheat_infinite_ammo') == '1',
-                                                           ini.get('ue4_upscale', 'off')), flush=True)
-        except (OSError, ValueError) as error:
-            print(f'Render resolution: unchanged ({error})', flush=True)
     original_game = game.resolve()
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('GOW3_MODS_DIR', data / 'mods'),
@@ -192,10 +169,9 @@ def main():
             # The patch notes give the direct memory and VBlank rate the selected patches need.
             names = selected_patches(profile[1], profile[2], env.get('GOW3_PATCHES', ''), env.get('GOW3_PATCHES_ONLY') == '1')
             # gravityrush.ini decides the resolution and frame rate patches (in-game menu, launcher).
-            if not profile_ue4:  # God of War III's resolution / frame rate patch names
-                import xml.etree.ElementTree as ET
-                known = {m.get('Name') for m in ET.parse(profile[1]).getroot().iter('Metadata')}
-                names = graphics_options.patch_names(names, graphics, graphics_options.TEXTURE_FIX in known)
+            import xml.etree.ElementTree as ET
+            known = {m.get('Name') for m in ET.parse(profile[1]).getroot().iter('Metadata')}
+            names = graphics_options.patch_names(names, graphics, graphics_options.TEXTURE_FIX in known)
             env['GOW3_PATCHES'] = ';'.join(names)
             env['GOW3_PATCHES_ONLY'] = '1'
             dmem, vblank = patch_requirements(profile[1], names, profile[2])

@@ -107,8 +107,5 @@ uint64_t runtime_memory_flexible_available(void);
 uintptr_t runtime_extra_resolve(const char *name);
 void runtime_extra_report(void);
 unsigned char *runtime_image_base(void);
-void runtime_ue4_setres_poll(void);
-void runtime_ue4_request_setres(const char *text);
-void runtime_sse4a_install(unsigned char *image, size_t image_size, unsigned char *stubs, size_t stubs_size);
 int runtime_sse4a_emulate(void *context_record);
 #endif

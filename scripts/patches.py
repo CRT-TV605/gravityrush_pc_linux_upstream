@@ -100,7 +100,7 @@ def eboot_matches(game, profile):
         return False
 
 
-# God of War III notes: the texture fix and the resolution patches both resize the video arena;
+# The texture fix and the resolution patches both resize the video arena;
 # enable one, never both. A chosen resolution patch replaces the default texture fix.
 EXCLUSIVE_PREFIX='Resolution Patch'
 REPLACED_BY_EXCLUSIVE={'Bug Fix - Texture Corruption Fix'}

@@ -11,11 +11,6 @@ PROFILES = {
         'modules': ('libc.prx', 'libSceFios2.prx'),
         'env': {},
     },
-    'CUSA01623': {
-        'name': 'God of War III',
-        'modules': ('libc.prx', 'libSceFios2.prx'),
-        'env': {},
-    },
 }
 DEFAULT = {'name': None, 'modules': ('libc.prx', 'libSceFios2.prx'), 'env': {}}
 

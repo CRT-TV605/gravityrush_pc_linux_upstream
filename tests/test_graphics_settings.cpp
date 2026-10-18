@@ -73,13 +73,13 @@ int main() {
     assert(v.async_shaders);
     {
         std::ofstream out(path);
-        out << "cheat_double_jumps=1\ncheat_very_hard=1\n";
+        out << "shadow_quality=high\nrefresh_rate=144\n";
     }
     Gow3Settings::Load();
     Gow3Settings::Save();
-    const std::string cheats = Read(path);
-    assert(cheats.find("cheat_double_jumps=1\n") != std::string::npos);
-    assert(cheats.find("cheat_very_hard=1\n") != std::string::npos);
+    const std::string kept = Read(path);  // the launcher's keys survive the menu's save
+    assert(kept.find("shadow_quality=high\n") != std::string::npos);
+    assert(kept.find("refresh_rate=144\n") != std::string::npos);
     std::remove(path);
     std::puts("PASS: graphics settings");
 }

@@ -37,7 +37,7 @@ if [[ -z ${PYTHON:-} ]]; then
 fi
 if [[ -z ${PYTHON:-} ]]; then echo 'Install Python 3 or set PYTHON.' >&2; exit 1; fi
 # GOW3_GAME_DIR: the game's folder (eboot.bin, sce_module, ...); default next to this directory.
-game=${GOW3_GAME_DIR:-../CUSA01623}
+game=${GOW3_GAME_DIR:-../CUSA01113}
 if [[ ! -f $game/eboot.bin ]]; then echo "No eboot.bin in $game (set GOW3_GAME_DIR)." >&2; exit 1; fi
 original_game=$game
 game=$("$PYTHON" scripts/mods.py "$game" --out "$out" \

@@ -38,8 +38,8 @@ do mod são recusados.
 Pelo terminal:
 
 ```sh
-GOW3_GAME_DIR=/caminho/CUSA01623 GOW3_MODS_DIR=/caminho/mods python run.py
-GOW3_GAME_DIR=/caminho/CUSA01623 GOW3_MODS_ENABLED=0 python run.py
+GOW3_GAME_DIR=/caminho/CUSA01113 GOW3_MODS_DIR=/caminho/mods python run.py
+GOW3_GAME_DIR=/caminho/CUSA01113 GOW3_MODS_ENABLED=0 python run.py
 ```
 
 Ordem e desativações ficam em `mods.json` no diretório de dados:

@@ -6,10 +6,6 @@
 #include <string.h>
 #include <inttypes.h>
 #include "runtime.h"
-#include "orb_hook.h"
-#include "cheat_hook.h"
-#include "actor_hook.h"
-#include "damage_hook.h"
 #include "gpu/gow3gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -409,96 +405,6 @@ static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t 
             address - segments[i].address <= segments[i].size - bytes) return 1;
     return 0;
 }
-extern ABI float gow3_orbs_gain(void *player, float requested);
-extern void gow3_orbs_status(int supported);
-extern uintptr_t gow3_cheat_flag(unsigned id);
-extern uintptr_t gow3_actor_slots_address(void);
-extern void gow3_actor_status(int supported);
-extern void gow3_cheat_status(unsigned id);
-extern uintptr_t gow3_damage_multiplier(int taken);
-extern uintptr_t gow3_orb_pickup_multiplier(unsigned kind);
-extern void gow3_stat_multipliers_status(int damage, int orb_pickup);
-
-static void install_cheats(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
-    char path[4096], serial[32] = "", version[32] = "";
-    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
-    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
-    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    if (strcmp(serial, "CUSA01623") || strcmp(version, "01.02")) return;
-    const char *names[] = {"health", "magic", "item meter", "Rage of Sparta", "red orbs",
-                           "Very Hard unlock", "infinite double jumps"};
-    for (unsigned id = 0; id < GOW3_CHEAT_COUNT; ++id) {
-        int valid = 1;
-        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
-            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
-            if (hook->id != id) continue;
-            if (hook->offset > size || hook->length > size - hook->offset ||
-                !mapped(segments, count, hook->offset, hook->length) ||
-                !gow3_cheat_signature_match(hook, image + hook->offset, size - hook->offset)) valid = 0;
-        }
-        if (!valid) {
-            printf("Cheats: %s unavailable (code signature mismatch)\n", names[id]);
-            continue;
-        }
-        unsigned char *stubs = allocate(page_size);
-        int32_t relative[GOW3_CHEAT_HOOK_COUNT] = {0};
-        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
-            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
-            if (hook->id != id) continue;
-            unsigned char *stub = stubs + i * 256;
-            int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + hook->offset + 5);
-            if (delta < INT32_MIN || delta > INT32_MAX) { valid = 0; break; }
-            relative[i] = (int32_t)delta;
-            gow3_cheat_build_stub(stub, hook, gow3_cheat_flag(id),
-                                 (uintptr_t)(image + hook->offset + hook->length));
-        }
-        if (!valid) {
-            printf("Cheats: %s unavailable (hook outside relative-jump range)\n", names[id]);
-            continue;
-        }
-        protect(stubs, page_size, 5);
-        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
-            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
-            if (hook->id != id) continue;
-            image[hook->offset] = 0xe9;
-            memcpy(image + hook->offset + 1, &relative[i], 4);
-            memset(image + hook->offset + 5, 0x90, hook->length - 5);
-        }
-        gow3_cheat_status(id);
-        printf("Cheats: %s ready (live toggle, initially disabled unless saved)\n", names[id]);
-    }
-}
-
-/* Damage hook for the enemy health bar (src/actor_hook.h). Always
- * installed when the code matches: it only records values; the overlay decides what to show. */
-static void install_actor_watch(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
-    char path[4096], serial[32] = "", version[32] = "";
-    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
-    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
-    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    const uint64_t at = GOW3_ACTOR_HOOK_OFFSET;
-    if (strcmp(serial, "CUSA01623") || strcmp(version, "01.02") || at > size ||
-        !mapped(segments, count, at, GOW3_ACTOR_HOOK_LENGTH) ||
-        !gow3_actor_signature_match(image + at, size - at)) {
-        printf("Health display: unavailable (game version or code signature mismatch)\n");
-        return;
-    }
-    unsigned char *stub = allocate(page_size);
-    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
-    if (delta < INT32_MIN || delta > INT32_MAX) {
-        printf("Health display: unavailable (hook outside relative-jump range)\n");
-        return;
-    }
-    gow3_actor_build_stub(stub, gow3_actor_slots_address(), (uintptr_t)(image + at + GOW3_ACTOR_HOOK_LENGTH));
-    protect(stub, page_size, 5);
-    const int32_t relative = (int32_t)delta;
-    image[at] = 0xe9;
-    memcpy(image + at + 1, &relative, 4);
-    memset(image + at + 5, 0x90, GOW3_ACTOR_HOOK_LENGTH - 5);
-    gow3_actor_status(1);
-    printf("Health display: damage hook ready (enemy health bar in the menu)\n");
-}
-
 #ifdef _WIN32
 /* GOW3_RT_TRACE=1 (diagnostics, Gravity Rush 01.00): every render target the game initialises
  * (image offset 0x153b0: device, target, format, width, height, pitch) is logged with its caller.
@@ -543,84 +449,6 @@ static void install_rt_trace(uint64_t size) {
 }
 #endif
 
-static void install_orb_multiplier(const char *app0, Segment *segments, uint64_t count,
-                                   uint64_t size) {
-    char path[4096], serial[32] = "", version[32] = "";
-    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
-    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
-    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    if (strcmp(serial, "CUSA01623") || strcmp(version, "01.02") ||
-        !gow3_orb_signatures_match(image, size)) {
-        printf("Red orbs: multiplier unavailable (game version or gain signatures mismatch)\n");
-        return;
-    }
-    for (unsigned i = 0; i < 3; ++i) {
-        if (!mapped(segments, count, gow3_orb_calls[i], 5)) return;
-    }
-    /* SysV call sites: preserve the receiver across the helper, then tail-call the original
-     * setter. Its cap and upgrade notifications remain in the game's own code. */
-    unsigned char *stub = allocate(page_size);
-    uintptr_t helper = (uintptr_t)gow3_orbs_gain, setter = (uintptr_t)(image + 0x6a9f0);
-    unsigned char code[26];
-    gow3_orb_build_stub(code, helper, setter);
-    int32_t displacements[3];
-    for (unsigned i = 0; i < 3; ++i) {
-        int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + gow3_orb_calls[i] + 5);
-        if (delta < INT32_MIN || delta > INT32_MAX) {
-            printf("Red orbs: multiplier unavailable (hook outside relative-call range)\n");
-            return;
-        }
-        displacements[i] = (int32_t)delta;
-    }
-    memcpy(stub, code, sizeof(code));
-    protect(stub, page_size, 5);
-    for (unsigned i = 0; i < 3; ++i)
-        memcpy(image + gow3_orb_calls[i] + 1, &displacements[i], 4);
-    gow3_orbs_status(1);
-    printf("Red orbs: live multiplier ready (3 validated gain paths, 0.1x to 100x)\n");
-}
-/* Writes a jump from image+at to `stub`; the rest of the replaced bytes become nops (the stub
- * replays them). 0 when the stub is out of relative-jump range. */
-static int install_jump(uint64_t at, unsigned length, unsigned char *stub) {
-    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
-    if (delta < INT32_MIN || delta > INT32_MAX) return 0;
-    const int32_t relative = (int32_t)delta;
-    image[at] = 0xe9;
-    memcpy(image + at + 1, &relative, 4);
-    memset(image + at + 5, 0x90, length - 5);
-    return 1;
-}
-
-/* Damage dealt/taken and green/blue/gold orb multipliers (src/damage_hook.h, src/orb_hook.h):
- * the stubs read the menu's floats directly, so changes apply on the next hit or pickup. */
-static void install_stat_multipliers(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
-    char path[4096], serial[32] = "", version[32] = "";
-    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
-    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
-    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    const int game = !strcmp(serial, "CUSA01623") && !strcmp(version, "01.02");
-    const uint64_t damage_at = GOW3_DAMAGE_HOOK_OFFSET, pickup_at = GOW3_ORB_PICKUP_OFFSET;
-    int damage = game && damage_at < size && mapped(segments, count, damage_at, GOW3_DAMAGE_HOOK_LENGTH) &&
-                 gow3_damage_signature_match(image + damage_at, size - damage_at);
-    int pickup = game && pickup_at < size && mapped(segments, count, pickup_at, GOW3_ORB_PICKUP_LENGTH) &&
-                 gow3_orb_pickup_signature_match(image + pickup_at, size - pickup_at);
-    unsigned char *stubs = damage || pickup ? allocate(page_size) : NULL;
-    if (damage) {
-        gow3_damage_build_stub(stubs, gow3_damage_multiplier(1), gow3_damage_multiplier(0),
-                               (uintptr_t)(image + damage_at + GOW3_DAMAGE_HOOK_LENGTH));
-    }
-    if (pickup) {
-        gow3_orb_pickup_build_stub(stubs + 256, gow3_orb_pickup_multiplier(0), gow3_orb_pickup_multiplier(1),
-                                   gow3_orb_pickup_multiplier(2),
-                                   (uintptr_t)(image + pickup_at + GOW3_ORB_PICKUP_LENGTH));
-    }
-    if (stubs) protect(stubs, page_size, 5);
-    damage = damage && install_jump(damage_at, GOW3_DAMAGE_HOOK_LENGTH, stubs);
-    pickup = pickup && install_jump(pickup_at, GOW3_ORB_PICKUP_LENGTH, stubs + 256);
-    gow3_stat_multipliers_status(damage, pickup);
-    printf("Multipliers: damage %s, green/blue/gold orbs %s\n", damage ? "ready" : "unavailable",
-           pickup ? "ready" : "unavailable");
-}
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -929,20 +757,10 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
-    /* AMD-only SSE4a instructions in the game: SSE2 trampolines on CPUs without them. */
-    unsigned char *sse4a_stubs = allocate(page_size);
-    runtime_sse4a_install(image, size, sse4a_stubs, page_size);
-    protect(sse4a_stubs, page_size, 5);
-    /* Cheats, multipliers and the health bar hook God of War III's code (CUSA01623) only. */
+#ifdef _WIN32
     char hooks_sfo[4096], hooks_serial[32]="";
     snprintf(hooks_sfo,sizeof(hooks_sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
     sfo_value(hooks_sfo,"TITLE_ID",hooks_serial,sizeof(hooks_serial),NULL);
-    const int game_hooks=gpu_enabled && !strcmp(hooks_serial,"CUSA01623");
-    if (game_hooks) install_orb_multiplier(app0, segments, ns, size);
-    if (game_hooks) install_cheats(app0, segments, ns, size);
-    if (game_hooks) install_actor_watch(app0, segments, ns, size);
-    if (game_hooks) install_stat_multipliers(app0, segments, ns, size);
-#ifdef _WIN32
     if (getenv("GOW3_RT_TRACE") && !strcmp(hooks_serial, "CUSA01113")) install_rt_trace(size);
 #endif
 #ifdef _WIN32
