@@ -12,6 +12,7 @@ which "Gravity Rush.exe" uses), run.py (`--run`) and the preparation scripts (`-
 packaged port needs no Python.
 """
 import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -41,12 +42,22 @@ MOD_PRESETS = DATA_DIR / 'mods_presets.json'
 APP_NAME = 'Gravity Rush'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-# This build. New versions are on the GitHub releases page (the automatic updater is off).
-VERSION = '0.1.0'
-RELEASES_API = None
+# This build. A release package's launcher looks for a newer release on GitHub when it opens
+# (Advanced > Updates) and installs it when the player agrees. Every release so far is a preview,
+# so pre-releases count. Tests: GR_UPDATE_API serves another release list, GR_UPDATE_TEST_FROM
+# makes this build compare as an older version.
+VERSION = '0.1.1'
+RELEASES_API = os.environ.get('GR_UPDATE_API') or \
+    'https://api.github.com/repos/LucaPazienza/gravityrush_pc/releases?per_page=20'
 RELEASES_PAGE = 'https://github.com/LucaPazienza/gravityrush_pc/releases'
+INSTALLED_VERSION = os.environ.get('GR_UPDATE_TEST_FROM') or VERSION
+# The Windows package of a release (packaging/windows/package.sh).
+RELEASE_ASSET = re.compile(r'GravityRush-PC-[0-9.]+-Windows\.zip', re.IGNORECASE)
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'gravityrush-update'
-# Never copied over an installation by an update (the package does not hold them either).
+# Updates install only over a release package (runtime in bin/); a development copy updates with git.
+IS_RELEASE = FROZEN and (PORT_DIR / 'bin' / 'gravityrush-runtime.exe').is_file() and not (PORT_DIR / 'build.sh').exists()
+# Never copied over an installation by an update (the package does not hold them either): what
+# players create next to the launcher, at the top of the folder.
 USER_FILES = ('user', 'out', 'mods', 'gravityrush.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
 
 
@@ -147,7 +158,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', '
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False, 'f12_quits': False,
                 'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
-                'last_pkg': ''}
+                'last_pkg': '', 'update_check': True}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and are not remapped on the gamepad.
@@ -1712,15 +1723,16 @@ class Launcher:
     def check_update(self, manual=False):
         """Helper thread: asks GitHub for the newest release and offers it when it is newer."""
         try:
-            version, url, page = latest_release()
-        except (OSError, ValueError, KeyError) as failure:
+            release = latest_release()
+            version, url, page = release['version'], release['url'], release['page']
+        except (OSError, ValueError, KeyError, TypeError) as failure:
             if manual:
                 self.ui_calls.put(lambda error=failure: self.messagebox.showerror(
                     APP_NAME, _('Could not check for updates: {}', 'Не удалось проверить обновления: {}').format(error)))
             return
 
         def show():
-            if version_tuple(version) > version_tuple(VERSION):
+            if version_tuple(version) > version_tuple(INSTALLED_VERSION):
                 self.offer_update(version, url, page)
             elif manual:
                 self.messagebox.showinfo(APP_NAME, _('You have the latest version ({}).',
@@ -1752,7 +1764,7 @@ class Launcher:
         if self.process:
             self.messagebox.showinfo(APP_NAME, _('Close the game before updating.', 'Закройте игру перед обновлением.'))
             return
-        if not FROZEN or not url:  # a source tree updates with git
+        if not IS_RELEASE or not url:  # a development copy updates with git
             webbrowser.open(page)
             return
         if not self.messagebox.askyesno(APP_NAME, _(
@@ -1904,16 +1916,90 @@ def version_tuple(text):
     return tuple(int(number) for number in re.findall(r'\d+', text or ''))
 
 
+def http_request(url):
+    return urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json',
+                                                'User-Agent': f'gravityrush-launcher/{VERSION}'})
+
+
 def latest_release():
-    """(version, zip URL, page URL) of the newest GitHub release."""
-    request = urllib.request.Request(RELEASES_API, headers={'Accept': 'application/vnd.github+json',
-                                                            'User-Agent': 'gravityrush-launcher'})
-    with urllib.request.urlopen(request, timeout=15) as response:
-        release = json.load(response)
-    version = '.'.join(re.findall(r'\d+', release['tag_name']))
-    url = next((asset['browser_download_url'] for asset in release.get('assets', [])
-                if asset.get('name', '').lower().endswith('.zip')), None)
-    return version, url, release.get('html_url') or RELEASES_PAGE
+    """The newest published release with a Windows package (pre-releases count): a dict with
+    version, url (the package), name, size, sha256 (or sha256_url) and page."""
+    with urllib.request.urlopen(http_request(RELEASES_API), timeout=15) as response:
+        releases = json.load(response)
+    if isinstance(releases, dict):  # one release (the /latest endpoint)
+        releases = [releases]
+    best = None
+    for release in releases:
+        version = '.'.join(re.findall(r'\d+', release.get('tag_name') or ''))
+        if release.get('draft') or not version:
+            continue
+        assets = release.get('assets') or []
+        package = next((a for a in assets if RELEASE_ASSET.fullmatch(a.get('name') or '')), None)
+        if not package or (best and version_tuple(version) <= version_tuple(best['version'])):
+            continue
+        # GitHub lists a SHA-256 for each asset; package.sh also publishes NAME.sha256.
+        digest = (package.get('digest') or '').lower()
+        checksum = next((a for a in assets if a.get('name') == package['name'] + '.sha256'), {})
+        best = {'version': version, 'url': package.get('browser_download_url'), 'name': package['name'],
+                'size': int(package.get('size') or 0), 'page': release.get('html_url') or RELEASES_PAGE,
+                'sha256': digest[7:] if digest.startswith('sha256:') else None,
+                'sha256_url': checksum.get('browser_download_url')}
+    if not best:
+        raise ValueError('no release with a Windows package')
+    return best
+
+
+def download_update(release, progress):
+    """Downloads the release's package into UPDATE_DIR, checks its SHA-256 and unpacks it; returns
+    the folder holding the new launcher. progress(done bytes, total bytes) runs on this thread."""
+    shutil.rmtree(UPDATE_DIR, ignore_errors=True)
+    UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    archive = UPDATE_DIR / 'update.zip'
+    digest = hashlib.sha256()
+    with urllib.request.urlopen(http_request(release['url']), timeout=60) as response, open(archive, 'wb') as out:
+        total, done = int(response.headers.get('Content-Length') or release.get('size') or 0), 0
+        while chunk := response.read(1 << 20):
+            out.write(chunk)
+            digest.update(chunk)
+            done += len(chunk)
+            progress(done, total)
+    expected = release.get('sha256')
+    if not expected and release.get('sha256_url'):
+        with urllib.request.urlopen(http_request(release['sha256_url']), timeout=30) as response:
+            expected = (response.read(4096).decode('ascii', 'replace').split() or [''])[0].lower()
+    if not expected:
+        raise OSError('the release lists no checksum for its package')
+    if digest.hexdigest() != expected:
+        raise OSError('the download is damaged (checksum mismatch); try again')
+    with zipfile.ZipFile(archive) as package:  # extractall drops absolute paths and ".." parts
+        package.extractall(UPDATE_DIR / 'new')
+    archive.unlink()
+    new = next((p.parent for p in (UPDATE_DIR / 'new').rglob(LAUNCHER_EXE)), None)
+    if not new or not (new / 'bin' / 'gravityrush-runtime.exe').is_file():
+        raise OSError(f'{LAUNCHER_EXE} is missing from the download')
+    return new
+
+
+def folder_writable(folder):
+    """Whether an update can replace files in this folder (not under Program Files, not read-only)."""
+    probe = Path(folder) / f'.update-check-{os.getpid()}'
+    try:
+        probe.write_bytes(b'')
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def start_update(new):
+    """Starts the downloaded launcher: it copies itself over this installation once this launcher
+    has closed (--install-update, kept the same in every version), then opens it again."""
+    command = [str(new / LAUNCHER_EXE), '--install-update', str(PORT_DIR), str(os.getpid())]
+    flags = NO_WINDOW | 0x01000000  # CREATE_BREAKAWAY_FROM_JOB: it outlives this launcher
+    try:
+        subprocess.Popen(command, cwd=str(new), stdin=subprocess.DEVNULL, creationflags=flags)
+    except OSError:  # a job that forbids breaking away
+        subprocess.Popen(command, cwd=str(new), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
 
 
 def install_update(target, wait_pid):
@@ -1926,12 +2012,14 @@ def install_update(target, wait_pid):
     if handle:
         kernel.WaitForSingleObject(handle, 60000)
         kernel.CloseHandle(handle)
-    ignore = shutil.ignore_patterns(*USER_FILES)
+
+    def ignore(folder, names):  # players' files at the top of the installation
+        return [name for name in names if Path(folder) == PORT_DIR and name in USER_FILES]
     for attempt in range(30):
         try:
             shutil.copytree(PORT_DIR, target, dirs_exist_ok=True, ignore=ignore)
             break
-        except OSError:  # a file still in use: the old launcher is closing
+        except OSError:  # a file still in use: the old launcher (or the game) is closing
             time.sleep(1)
     else:
         ctypes.windll.user32.MessageBoxW(None, _(
@@ -1939,7 +2027,7 @@ def install_update(target, wait_pid):
             'Не удалось установить обновление. Скачайте его со страницы релизов.'), APP_NAME, 0x10)
         webbrowser.open(RELEASES_PAGE)
         return 1
-    subprocess.Popen([str(target / LAUNCHER_EXE)], cwd=str(target))
+    subprocess.Popen([str(target / LAUNCHER_EXE), '--updated'], cwd=str(target))
     return 0
 
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Builds dist/gravityrush-windows/ (and dist/gravityrush-windows.zip): "Gravity Rush Launcher.exe" (frozen
+# Builds dist/gravityrush-windows/ (and dist/GravityRush-PC-<version>-Windows.zip with its .sha256, the
+# release assets the launcher's updater looks for; the version is VERSION in
+# launcher/gravityrush_launcher.py): "Gravity Rush Launcher.exe" (frozen
 # with PyInstaller so players need no Python), "Gravity Rush.exe" (plays with the saved settings), gravityrush-runtime.exe with the MSYS2 CLANG64 DLLs it needs,
 # the preparation scripts and run.py. Run from an MSYS2 CLANG64 shell after `bash build.sh`.
 # Freezing uses a Windows Python 3.10+ (python.org; WINPYTHON overrides) and a private venv in
@@ -112,10 +114,15 @@ if [[ -n $forbidden ]]; then
     echo "$forbidden" >&2
     exit 1
 fi
+version=$(sed -n "s/^VERSION = '\([0-9.]*\)'.*/\1/p" launcher/gravityrush_launcher.py)
+[[ -n $version ]] || { echo 'No VERSION in launcher/gravityrush_launcher.py' >&2; exit 1; }
+zip_name="GravityRush-PC-$version-Windows.zip"
 mkdir -p dist
-rm -f dist/gravityrush-windows.zip
+rm -f dist/gravityrush-windows.zip "dist/$zip_name" "dist/$zip_name.sha256"
 (cd out/stage && powershell -NoProfile -Command \
-    "Compress-Archive -Path gravityrush-windows -DestinationPath ../../dist/gravityrush-windows.zip")
+    "Compress-Archive -Path gravityrush-windows -DestinationPath ../../dist/$zip_name")
+# The updater checks the download against this (and against GitHub's own digest of the asset).
+(cd dist && sha256sum "$zip_name" | sed 's/ \*/  /' > "$zip_name.sha256")
 
 # Refresh dist/gow3-windows, keeping what players create there (saves, settings, mods), and
 # only while nothing runs from it: deleting a running launcher's files breaks it.
@@ -130,4 +137,4 @@ else
         ! -name mods.json ! -name patches.json -exec rm -rf {} +
     cp -r "$dest/." "$play/"
 fi
-du -sh "$dest" dist/gravityrush-windows.zip
+du -sh "$dest" "dist/$zip_name"

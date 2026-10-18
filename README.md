@@ -20,7 +20,7 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: first public preview (0.1.0) — the opening, the first episode and the city work,
+**Status: public preview (0.1.1) — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
 **[Download the latest preview](https://github.com/LucaPazienza/gravityrush_pc/releases)** —
@@ -46,6 +46,8 @@ What works today:
   The **DualSense gyro** steers the gravity camera like on the PS4 (adjustable sensitivity).
 - **Launcher:** a comic-book styled window with the game, video, controls, advanced and
   log pages, in English, Italian, French, German and Spanish. `Gravity Rush.exe` starts the game directly with the saved settings.
+  The launcher finds new releases on GitHub by itself and installs them when the player agrees
+  (saves, settings and mods are kept).
 - **In-game menu** (Insert, or R3+L2): image options, performance and an FPS overlay.
 
 Not done yet / known gaps:
@@ -53,7 +55,8 @@ Not done yet / known gaps:
 - Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
   are not modelled: the dry sound plays.
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- A rare crash in the graphics command recorder has been seen once in a long session.
+- A rare crash in the graphics driver (an end of rendering without its begin) has been seen twice;
+  the renderer now drops such a command, and the log says so if it happens again.
 - No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap
@@ -85,6 +88,7 @@ Not done yet / known gaps:
 2. Open **Gravity Rush Launcher.exe** (Windows may warn that the program is not signed: More info,
    Run anyway), choose your game folder on the Game page and press **Play**.
 3. Later, **Gravity Rush.exe** starts the game straight away with the saved settings.
+4. New versions: the launcher offers them when it opens (Advanced > Updates).
 
 The Video page sets the render resolution (up to 4K), shadow quality and the display options.
 To report a problem, press **F12** where you see it (the frames are saved in `user\screenshots`)

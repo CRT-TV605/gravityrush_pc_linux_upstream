@@ -1,4 +1,4 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.0 (preview)
+Gravity Rush Remastered (PS4) for PC - version 0.1.1 (preview)
 ===============================================================
 
 A native PC port: the game's own code runs on your processor, with no emulator. This is an early
@@ -37,6 +37,9 @@ While playing
 
 Next time
 - "Gravity Rush.exe" starts the game straight away with the saved settings (shortcut, Steam).
+- Updates: when a new version is out, the launcher offers it as it opens and installs it if you
+  agree (it closes, replaces the program files and opens again; user\, gravityrush.ini and mods
+  stay as they are). Advanced page: "Check for updates at start" turns this off.
 - Saves, shader cache and logs: user\ next to the executables (keep it when updating).
 - Settings: gravityrush.ini next to the executables; launcher options in %APPDATA%\gravityrush-launcher.
 
@@ -47,9 +50,9 @@ Reporting a problem
 - Reports: https://github.com/LucaPazienza/gravityrush_pc/issues
 
 Known issues
-- Some fixed camera shots at the start of the game can be framed wrongly (under investigation; the
-  gyro is the main suspect: try "Motion sensor" at its minimum in the game's settings).
-- A rare crash in the graphics command recorder has been seen once in a long session.
+- Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
+- A rare crash in the graphics driver has been seen twice (when a movie started, during a save);
+  0.1.1 guards against its cause. If it happens again, please send user\last_run.log.
 - Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
 - Online features (PSN) are not available: the game runs as a console that is not signed in.
 

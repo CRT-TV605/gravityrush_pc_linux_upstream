@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
@@ -269,6 +270,31 @@ _ROWS = [
     ('D-pad left', 'Croce sinistra', 'Croix gauche', 'Steuerkreuz links', 'Cruceta izquierda'),
     ('D-pad right', 'Croce destra', 'Croix droite', 'Steuerkreuz rechts', 'Cruceta derecha'),
     ('Touchpad click', 'Clic touchpad', 'Clic du pavé tactile', 'Touchpad-Klick', 'Clic del panel táctil'),
+    # Updates.
+    ('UPDATES', 'AGGIORNAMENTI', 'MISES À JOUR', 'UPDATES', 'ACTUALIZACIONES'),
+    ('Check for updates at start', "Cerca aggiornamenti all'avvio", 'Rechercher les mises à jour au démarrage', 'Beim Start nach Updates suchen', 'Buscar actualizaciones al iniciar'),
+    ('Looks for a new version on GitHub when the launcher opens and asks before installing it.', 'Cerca una nuova versione su GitHub quando apri il launcher e chiede prima di installarla.', "Recherche une nouvelle version sur GitHub à l'ouverture du lanceur et demande avant de l'installer.", 'Sucht beim Öffnen des Launchers auf GitHub nach einer neuen Version und fragt vor der Installation.', 'Busca una nueva versión en GitHub al abrir el lanzador y pregunta antes de instalarla.'),
+    ('Installed version', 'Versione installata', 'Version installée', 'Installierte Version', 'Versión instalada'),
+    ('Check now', 'Controlla ora', 'Vérifier', 'Jetzt prüfen', 'Comprobar ahora'),
+    ('Development copy: it updates with git.', 'Copia di sviluppo: si aggiorna con git.', 'Copie de développement : elle se met à jour avec git.', 'Entwicklungskopie: Sie wird mit git aktualisiert.', 'Copia de desarrollo: se actualiza con git.'),
+    ('Checking for updates…', 'Ricerca aggiornamenti…', 'Recherche des mises à jour…', 'Suche nach Updates…', 'Buscando actualizaciones…'),
+    ('Could not check for updates.', 'Impossibile cercare aggiornamenti.', 'Impossible de rechercher les mises à jour.', 'Die Suche nach Updates ist fehlgeschlagen.', 'No se pudieron buscar actualizaciones.'),
+    ('You have the latest version.', "Hai già l'ultima versione.", 'Vous avez la dernière version.', 'Du hast die neueste Version.', 'Tienes la última versión.'),
+    ('Update available', 'Aggiornamento disponibile', 'Mise à jour disponible', 'Update verfügbar', 'Actualización disponible'),
+    ('Version {} is available (you have {}). Install it now? Saves and settings are kept.', 'È disponibile la versione {} (hai la {}). Vuoi installarla ora? Salvataggi e impostazioni restano.', "La version {} est disponible (vous avez la {}). L'installer maintenant ? Sauvegardes et réglages sont conservés.", 'Version {} ist verfügbar (du hast {}). Jetzt installieren? Spielstände und Einstellungen bleiben erhalten.', 'La versión {} está disponible (tienes la {}). ¿Instalarla ahora? Las partidas y los ajustes se conservan.'),
+    ('Not now', 'Non ora', 'Plus tard', 'Später', 'Ahora no'),
+    ("What's new", 'Novità', 'Nouveautés', 'Neuigkeiten', 'Novedades'),
+    ('Install', 'Installa', 'Installer', 'Installieren', 'Instalar'),
+    ('Updating', 'Aggiornamento', 'Mise à jour', 'Aktualisierung', 'Actualizando'),
+    ('Downloading version {}… {}%', 'Download della versione {}… {}%', 'Téléchargement de la version {}… {} %', 'Version {} wird heruntergeladen… {} %', 'Descargando la versión {}… {} %'),
+    ('The launcher closes, installs the update and opens again.', "Il launcher si chiude, installa l'aggiornamento e si riapre.", 'Le lanceur se ferme, installe la mise à jour et se rouvre.', 'Der Launcher schließt sich, installiert das Update und öffnet sich wieder.', 'El lanzador se cierra, instala la actualización y se vuelve a abrir.'),
+    ('Update failed', 'Aggiornamento non riuscito', 'Échec de la mise à jour', 'Update fehlgeschlagen', 'Error al actualizar'),
+    ('The update could not be installed: {}', "Impossibile installare l'aggiornamento: {}", "Impossible d'installer la mise à jour : {}", 'Das Update konnte nicht installiert werden: {}', 'No se pudo instalar la actualización: {}'),
+    ('This folder is read-only, so the launcher cannot update itself here. Download the new version from the releases page.', 'Questa cartella è in sola lettura: il launcher non può aggiornarsi qui. Scarica la nuova versione dalla pagina delle release.', 'Ce dossier est en lecture seule : le lanceur ne peut pas se mettre à jour ici. Téléchargez la nouvelle version depuis la page des versions.', 'Dieser Ordner ist schreibgeschützt, daher kann sich der Launcher hier nicht aktualisieren. Lade die neue Version von der Release-Seite herunter.', 'Esta carpeta es de solo lectura, así que el lanzador no puede actualizarse aquí. Descarga la nueva versión desde la página de versiones.'),
+    ('Open the page', 'Apri la pagina', 'Ouvrir la page', 'Seite öffnen', 'Abrir la página'),
+    ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
+    ('Close the game before updating.', 'Chiudi il gioco prima di aggiornare.', 'Fermez le jeu avant la mise à jour.', 'Schließe das Spiel vor dem Update.', 'Cierra el juego antes de actualizar.'),
+    ('Updated to version {}', 'Aggiornato alla versione {}', 'Mis à jour vers la version {}', 'Auf Version {} aktualisiert', 'Actualizado a la versión {}'),
 ]
 TRANSLATIONS = {code: {row[0]: row[i] for row in _ROWS} for i, code in enumerate(('it', 'fr', 'de', 'es'), 1)}
 LANG = 'en'
@@ -966,6 +992,8 @@ class LauncherWindow:
         LANG = pick_language(self.app.get('ui_language'), logic.windows_language())
         self.process = self.job = None
         self.output, self.log_lines = queue.Queue(), []
+        self.ui_calls = queue.Queue()  # work for the Tk thread from helper threads (updates)
+        self.update_checking = False
         self.page = None
         self.capture = None   # (button, chip) while waiting for a key
         self.lifted = []      # the interface is up (gravity shift): hover and levitation pause
@@ -986,6 +1014,11 @@ class LauncherWindow:
         self.build_window()
         self.build_scene()
         self.root.after(100, self.drain)
+        # A release package looks for a newer version once the window is up (not a development copy).
+        if logic.IS_RELEASE and self.app.get('update_check', True):
+            self.root.after(1500, self.check_update)
+        if '--updated' in sys.argv:
+            self.root.after(900, lambda: self.toast(t('Updated to version {}').format(logic.VERSION)))
 
     # ---- basics ----------------------------------------------------------------------------
     def px(self, v):
@@ -1515,6 +1548,17 @@ class LauncherWindow:
         self.row(body, 'Launcher language', lambda c: self.choice(c, [('', t('System'))] + LANGUAGES,
                                                                  self.app.get('ui_language', ''), self.set_language,
                                                                  14, translate=False).pack(side='right'))
+        self.sec(body, 'UPDATES')
+        self.toggle_row(body, 'Check for updates at start', self.app.get('update_check', True),
+                        lambda v: self.set_app('update_check', v),
+                        'Looks for a new version on GitHub when the launcher opens and asks before installing it.')
+
+        def make_version(control):
+            self.tk.Label(control, text=self.logic.VERSION, bg=PAPER, fg=MU,
+                          font=self.font(14, 'bold')).pack(side='left', padx=(0, self.px(10)))
+            ImageButton(self, control, t('Check now'), lambda: self.check_update(manual=True)).widget.pack(side='left')
+        self.row(body, 'Installed version', make_version,
+                 None if self.logic.IS_RELEASE else 'Development copy: it updates with git.')
         self.sec(body, 'IN GAME')
         self.toggle_row(body, 'Performance overlay', self.ini.get('show_fps', '1') == '1',
                         lambda v: self.set_ini('show_fps', '1' if v else '0'), 'Shows the FPS while you play.')
@@ -1728,13 +1772,13 @@ class LauncherWindow:
         self.toast(t('Log copied'))
 
     # ---- modal and toast -------------------------------------------------------------------
-    def modal(self, title, text, buttons, gauge=False):
-        """A dialog on a dimmed window: paper box, pops in with a small bounce."""
+    def modal(self, title, text, buttons, gauge=False, size=None):
+        """A dialog on a dimmed window: paper box, pops in with a small bounce. size: (w, h)."""
         self.close_modal()
         tk, cv = self.tk, self.cv
         self.photos['overlay'] = ImageTk.PhotoImage(self.paint.overlay())
         dim = cv.create_image(0, 0, anchor='nw', image=self.photos['overlay'])
-        bw, bh = 400, 200 if gauge or buttons else 170
+        bw, bh = size or (400, 200 if gauge or buttons else 170)
         self.photos['box'] = ImageTk.PhotoImage(self.paint.panel(bw, bh))
         bx, by = (W - bw) / 2, (H - bh) / 2
         box = cv.create_image(self.px(bx), self.px(by), anchor='nw', image=self.photos['box'])
@@ -1801,6 +1845,91 @@ class LauncherWindow:
         self.toast_items = [item]
         self.anim.add(350, lambda v: self.cv.coords(item, self.px(W / 2), self.px(H - 78 + 16 * (1 - v))), ease_out_back)
         self.root.after(1800, lambda: item in self.toast_items and (self.cv.delete(item), self.toast_items.remove(item)))
+
+    # ---- updates -----------------------------------------------------------------------------
+    def check_update(self, manual=False):
+        """Asks GitHub for the newest release on a helper thread (the window stays responsive)."""
+        if self.update_checking:
+            return
+        self.update_checking = True
+        if manual:
+            self.toast(t('Checking for updates…'))
+
+        def work():
+            try:
+                release, failure = self.logic.latest_release(), None
+            except Exception as error:  # offline, GitHub down, rate limit: only a manual check says so
+                release, failure = None, error
+            self.ui_calls.put(lambda: self.update_checked(release, failure, manual))
+        threading.Thread(target=work, daemon=True).start()
+
+    def update_checked(self, release, failure, manual):
+        self.update_checking = False
+        logic = self.logic
+        if failure or not release:
+            if manual:
+                self.toast(t('Could not check for updates.'))
+            return
+        if logic.version_tuple(release['version']) <= logic.version_tuple(logic.INSTALLED_VERSION):
+            if manual:
+                self.toast(t('You have the latest version.'))
+            return
+        if not manual and (self.process or self.modal_items):  # busy: asked again at the next start
+            return
+        self.modal(t('Update available'),
+                   t('Version {} is available (you have {}). Install it now? Saves and settings are kept.').format(
+                       release['version'], logic.INSTALLED_VERSION),
+                   [('Not now', self.close_modal, False), ("What's new", lambda: webbrowser.open(release['page']), False),
+                    ('Install', lambda: self.install_update(release), True)], size=(480, 250))
+
+    def install_update(self, release):
+        """Downloads the release on a helper thread; the new launcher then replaces this one."""
+        logic = self.logic
+        if self.process:
+            self.close_modal()
+            self.toast(t('Close the game before updating.'))
+            return
+        if not logic.IS_RELEASE:  # a development copy updates with git
+            self.close_modal()
+            webbrowser.open(release['page'])
+            return
+        if not logic.folder_writable(logic.PORT_DIR):
+            self.modal(t('Update failed'), t('This folder is read-only, so the launcher cannot update itself here. '
+                                             'Download the new version from the releases page.'),
+                       [('Close', self.close_modal, False),
+                        ('Open the page', lambda: (webbrowser.open(release['page']), self.close_modal()), True)],
+                       size=(480, 250))
+            return
+        self.modal(t('Updating'), t('Downloading version {}… {}%').format(release['version'], 0) + '\n' +
+                   t('The launcher closes, installs the update and opens again.'), [], gauge=True, size=(480, 220))
+        self.gauge_fraction = .02
+
+        def progress(done, total):
+            fraction = done / total if total else 0.0
+            self.ui_calls.put(lambda: self.update_progress(release, fraction))
+
+        def work():
+            try:
+                new = logic.download_update(release, progress)
+                logic.start_update(new)
+            except Exception as error:  # shown to the player; the launcher stays as it is
+                self.ui_calls.put(lambda error=error: self.update_failed(release, error))
+                return
+            self.ui_calls.put(self.quit)
+        threading.Thread(target=work, daemon=True).start()
+
+    def update_progress(self, release, fraction):
+        if self.modal_gauge is None:
+            return
+        self.gauge_fraction = max(.02, min(fraction, 1.0))
+        self.modal_text.configure(text=t('Downloading version {}… {}%').format(release['version'], int(fraction * 100)) +
+                                  '\n' + t('The launcher closes, installs the update and opens again.'))
+
+    def update_failed(self, release, error):
+        self.modal(t('Update failed'), t('The update could not be installed: {}').format(error),
+                   [('Close', self.close_modal, False),
+                    ('Open the page', lambda: (webbrowser.open(release['page']), self.close_modal()), True)],
+                   size=(480, 250))
 
     # ---- quit --------------------------------------------------------------------------------
     def ask_quit(self):
@@ -1882,6 +2011,12 @@ class LauncherWindow:
         self.output.put((code,))
 
     def drain(self):
+        while True:
+            try:
+                call = self.ui_calls.get_nowait()
+            except queue.Empty:
+                break
+            call()
         try:
             for _i in range(500):
                 item = self.output.get_nowait()
