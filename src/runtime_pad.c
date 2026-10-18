@@ -432,8 +432,31 @@ static void assign_touch_ids(PadData *d) {
     else if (!down_since) down_since=d->timestamp;
     d->touch_held_time=down_since ? (uint32_t)(d->timestamp-down_since) : 0;
 }
+/* GOW3_MOTION_FAKE=qx,qy,qz,qw[,ax,ay,az]: a fixed orientation (and acceleration in g), and
+ * GOW3_MOTION_FAKE_GYRO=wx,wy,wz a fixed angular velocity (rad/s), from GOW3_MOTION_FAKE_AFTER
+ * seconds on, with or without a gamepad (diagnostics: what the game does with the motion sensors). */
+static void fake_motion(PadData *d) {
+    static int parsed, count, gyro_count;
+    static float v[7], w[3];
+    static uint64_t from;
+    if (!parsed) {
+        parsed=1;
+        const char *e=getenv("GOW3_MOTION_FAKE"), *g=getenv("GOW3_MOTION_FAKE_GYRO");
+        const char *after=getenv("GOW3_MOTION_FAKE_AFTER");
+        if (e) count=sscanf(e,"%f,%f,%f,%f,%f,%f,%f",&v[0],&v[1],&v[2],&v[3],&v[4],&v[5],&v[6]);
+        if (g) gyro_count=sscanf(g,"%f,%f,%f",&w[0],&w[1],&w[2]);
+        from=now_us()+(uint64_t)((after ? atof(after) : 0.0)*1e6);
+    }
+    if ((count<4 && gyro_count<3) || now_us()<from) return;
+    static int logged;
+    if (!logged++) printf("Runtime: GOW3_MOTION_FAKE from now on\n");
+    if (count>=4) memcpy(d->orientation,v,4*sizeof(float));
+    if (count>=7) memcpy(d->acceleration,v+4,3*sizeof(float));
+    if (gyro_count>=3) memcpy(d->angular_velocity,w,3*sizeof(float));
+}
 static void sample(PadData *d) {
     sample_host(d);
+    fake_motion(d);
     if (gow3gpu_overlay_captures_input()) { hold_after_capture=1; return; }
     record_sample(d);
     read_inject();
