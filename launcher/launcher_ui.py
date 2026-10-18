@@ -279,6 +279,17 @@ _ROWS = [
     ('D-pad left', 'Croce sinistra', 'Croix gauche', 'Steuerkreuz links', 'Cruceta izquierda'),
     ('D-pad right', 'Croce destra', 'Croix droite', 'Steuerkreuz rechts', 'Cruceta derecha'),
     ('Touchpad click', 'Clic touchpad', 'Clic du pavé tactile', 'Touchpad-Klick', 'Clic del panel táctil'),
+    # Anti-aliasing, upscaler, sharpening.
+    ('Anti-aliasing', 'Anti-aliasing', 'Anticrénelage', 'Kantenglättung', 'Antialiasing'),
+    ('FXAA (as on PS4)', 'FXAA (come su PS4)', 'FXAA (comme sur PS4)', 'FXAA (wie auf PS4)', 'FXAA (como en PS4)'),
+    ("The game's own edge smoothing. Off is sharper, with jagged edges.", 'Lo smussamento dei bordi del gioco stesso. Disattivato: più nitido, con bordi seghettati.', 'Le lissage des contours du jeu lui-même. Désactivé : plus net, avec des bords crénelés.', 'Die spieleigene Kantenglättung. Aus: schärfer, mit gezackten Kanten.', 'El suavizado de bordes del propio juego. Desactivado: más nítido, con bordes dentados.'),
+    ('Upscaler', 'Upscaler', 'Upscaler', 'Upscaler', 'Escalador'),
+    ('FSR 1.0', 'FSR 1.0', 'FSR 1.0', 'FSR 1.0', 'FSR 1.0'),
+    ('Off', 'Disattivato', 'Désactivé', 'Aus', 'Desactivado'),
+    ('Enlarges the image to your screen when the render resolution is lower: for more FPS, pick 720p or Native with FSR 1.0.', 'Ingrandisce l’immagine fino allo schermo quando la risoluzione di rendering è più bassa: per più FPS scegli 720p o Nativa con FSR 1.0.', 'Agrandit l’image jusqu’à l’écran quand la résolution de rendu est plus basse : pour plus de FPS, choisissez 720p ou Native avec FSR 1.0.', 'Vergrößert das Bild auf den Bildschirm, wenn die Render-Auflösung niedriger ist: für mehr FPS 720p oder Nativ mit FSR 1.0 wählen.', 'Amplía la imagen hasta la pantalla cuando la resolución de renderizado es menor: para más FPS, elige 720p o Nativa con FSR 1.0.'),
+    ('Sharpening', 'Nitidezza', 'Netteté', 'Schärfe', 'Nitidez'),
+    ('Sharpens the final image (with FSR 1.0 when the game image is smaller than the screen). 0: off.', 'Rende più nitida l’immagine finale (con FSR 1.0 se l’immagine del gioco è più piccola dello schermo). 0: disattivata.', 'Rend l’image finale plus nette (avec FSR 1.0 si l’image du jeu est plus petite que l’écran). 0 : désactivée.', 'Schärft das fertige Bild (mit FSR 1.0, wenn das Spielbild kleiner als der Bildschirm ist). 0: aus.', 'Hace más nítida la imagen final (con FSR 1.0 si la imagen del juego es menor que la pantalla). 0: desactivada.'),
+    ('The size the game draws at. Lower than your screen runs faster; FSR 1.0 can enlarge it to the screen.', 'La dimensione a cui il gioco disegna. Più bassa dello schermo va più veloce; FSR 1.0 può ingrandirla fino allo schermo.', 'La taille à laquelle le jeu dessine. Plus basse que l’écran, c’est plus rapide ; FSR 1.0 peut l’agrandir jusqu’à l’écran.', 'Die Größe, in der das Spiel zeichnet. Niedriger als der Bildschirm läuft schneller; FSR 1.0 kann sie auf den Bildschirm vergrößern.', 'El tamaño al que dibuja el juego. Menor que la pantalla va más rápido; FSR 1.0 puede ampliarla hasta la pantalla.'),
     # Updates.
     ('UPDATES', 'AGGIORNAMENTI', 'MISES À JOUR', 'UPDATES', 'ACTUALIZACIONES'),
     ('Check for updates at start', "Cerca aggiornamenti all'avvio", 'Rechercher les mises à jour au démarrage', 'Beim Start nach Updates suchen', 'Buscar actualizaciones al iniciar'),
@@ -367,7 +378,9 @@ WINDOW_MODES = [('windowed', 'Windowed'), ('fullscreen', 'Fullscreen'), ('border
 FPS_CHOICES = [('30', '30'), ('60', '60'), ('120', '120'), ('0', 'Unlimited')]
 # Render resolution patches (patches/CUSA01113.xml, scripts/gr_resolution_patch.py).
 RESOLUTION_CHOICES = [('native', 'Native (1080p)'), ('720p', '720p (faster)'), ('1440p', '1440p'),
-                      ('1800p', '1800p'), ('4K', '4K (sharpest)')]
+                      ('1800p', '1800p'), ('4K', '4K')]
+AA_CHOICES = [('1', 'FXAA (as on PS4)'), ('0', 'Off')]
+UPSCALER_CHOICES = [('0', 'Off'), ('1', 'FSR 1.0')]
 SHADOW_CHOICES = [('standard', 'Standard (2048)'), ('high', 'High (4096)')]
 ANISOTROPY_CHOICES = [('0', "Game's own"), ('2', '2x'), ('4', '4x'), ('8', '8x'), ('16', '16x')]
 
@@ -1571,8 +1584,36 @@ class LauncherWindow:
         self.row(body, 'Render resolution',
                  lambda c: self.choice(c, RESOLUTION_CHOICES, current,
                                        lambda v: self.set_ini('render_resolution', v), 16).pack(side='right'),
-                 'The size the game draws at. Above your screen it works as anti-aliasing: 4K on a 1440p screen is '
-                 'the cleanest image.')
+                 'The size the game draws at. Lower than your screen runs faster; FSR 1.0 can enlarge it to the screen.')
+        self.row(body, 'Anti-aliasing',
+                 lambda c: Segments(self, c, AA_CHOICES, '0' if self.ini.get('fxaa', '1') == '0' else '1',
+                                    lambda v: self.set_ini('fxaa', v)).widget.pack(side='right'),
+                 "The game's own edge smoothing. Off is sharper, with jagged edges.")
+        self.row(body, 'Upscaler',
+                 lambda c: Segments(self, c, UPSCALER_CHOICES, '1' if self.ini.get('fsr1', '0') == '1' else '0',
+                                    lambda v: self.set_ini('fsr1', v)).widget.pack(side='right'),
+                 'Enlarges the image to your screen when the render resolution is lower: for more FPS, pick 720p '
+                 'or Native with FSR 1.0.')
+
+        def make_sharpening(control):
+            try:
+                value = int(self.ini.get('rcas_strength', '75')) if self.ini.get('rcas', '1') == '1' else 0
+            except ValueError:
+                value = 75
+            shown = self.tk.Label(control, text=f'{value}%', bg=CARD, fg=TEXT2, font=self.font(13.5, 'bold'), width=5,
+                                  anchor='e')
+
+            def changed(v):
+                v = int(round(v))
+                shown.configure(text=f'{v}%')
+                self.ini['rcas'] = '1' if v > 0 else '0'
+                if v > 0:
+                    self.ini['rcas_strength'] = str(v)
+                self.save()
+            Slider(self, control, 0, 100, 5, value, changed).widget.pack(side='left')
+            shown.pack(side='left')
+        self.row(body, 'Sharpening', make_sharpening,
+                 'Sharpens the final image (with FSR 1.0 when the game image is smaller than the screen). 0: off.')
         shadows = self.ini.get('shadow_quality', 'standard')
         self.row(body, 'Shadow quality',
                  lambda c: self.choice(c, SHADOW_CHOICES, shadows if shadows in dict(SHADOW_CHOICES) else 'standard',
@@ -1587,7 +1628,8 @@ class LauncherWindow:
         self.footer(foot, [('Reset', lambda: self.reset({'display_mode': 'borderless', 'vsync': '1', 'fps_limit': '0',
                                                          'refresh_rate': '0',
                                                          'render_resolution': 'native', 'anisotropy': '16',
-                                                         'shadow_quality': 'standard'}), False),
+                                                         'shadow_quality': 'standard', 'fxaa': '1', 'fsr1': '0',
+                                                         'rcas': '1', 'rcas_strength': '75'}), False),
                            ('Apply', self.apply, True)])
 
     def page_controls(self, body, foot):

@@ -105,6 +105,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.async_shaders = i != 0;
     } else if (key == "fsr1") {
         v.fsr1 = i != 0;
+    } else if (key == "fxaa") {
+        v.fxaa = i != 0;
     } else if (key == "rcas") {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
@@ -337,14 +339,14 @@ void Save() {
                  v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
     std::fprintf(file,
                  "display_mode=%s\nrefresh_rate=%d\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
-                 "fsr1=%d\nrcas=%d\nrcas_strength=%d\nanisotropy=%d\nframes_queued=%d\n"
+                 "fsr1=%d\nrcas=%d\nrcas_strength=%d\nanisotropy=%d\nframes_queued=%d\nfxaa=%d\n"
                  "render_resolution=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
                  Gow3Graphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  v.refresh_rate.load(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.anisotropy.load(),
-                 v.frames_queued.load(),
+                 v.frames_queued.load(), int(v.fxaa.load()),
                  Gow3Graphics::Resolutions[std::clamp(v.render_resolution.load(), 0, int(Gow3Graphics::Resolutions.size()) - 1)].data(),
                  v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));

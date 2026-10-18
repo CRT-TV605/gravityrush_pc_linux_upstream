@@ -67,6 +67,8 @@ struct Values {
     std::atomic<bool> async_shaders{true};
     std::atomic<bool> fsr1{false};
     std::atomic<bool> rcas{true};
+    /// The game's own FXAA (a luma pass and the filter after the tonemap); off: left out.
+    std::atomic<bool> fxaa{true};
     std::atomic<int> rcas_strength{75};
     /// Forced anisotropic filtering for mipmapped linear textures (0: the game's own).
     std::atomic<int> anisotropy{16};

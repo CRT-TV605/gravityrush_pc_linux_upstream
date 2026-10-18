@@ -151,7 +151,7 @@ INI_DEFAULTS = {'upscaler': 'off', 'preset': '1', 'sharpen': '1', 'sharpness': '
                 'render_resolution': 'native', 'engine_fps': '60', 'fsr1': '0', 'rcas': '1',
                 'rcas_strength': '75', 'frames_queued': '1', 'ue4_quality': 'console', 'cheat_very_hard': '0', 'cheat_double_jumps': '0', 'cheat_menu': '0', 'cheat_infinite_ammo': '0', 'ue4_upscale': 'off',
                 # The Video page's other settings: only the keys listed here are written to the file.
-                'refresh_rate': '0', 'shadow_quality': 'standard', 'anisotropy': '16'}
+                'refresh_rate': '0', 'shadow_quality': 'standard', 'anisotropy': '16', 'fxaa': '1'}
 DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), ('fullscreen', ('Fullscreen',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', ''), 'user_dir': '',

@@ -5,6 +5,7 @@
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "gow3_toggles.h"
+#include "gow3_settings.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -960,6 +961,16 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (DrawPipe::OnStageB()) {
         FrameCapture::Poll();
         scheduler.PopPendingOperations();
+    }
+    // gow3: Gravity Rush's own FXAA, a luma pass and then the filter into the display buffer, is
+    // left out when anti-aliasing is off (gravityrush.ini fxaa=0, live from the in-game menu):
+    // the display buffer keeps the tonemapped frame drawn just before it.
+    if (!Gow3Settings::Get().fxaa.load(std::memory_order_relaxed)) {
+        static constexpr u64 game_fxaa[] = {0x8c2537d0, 0x634c42fb};
+        if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            ps && std::ranges::find(game_fxaa, ps->pgm_hash) != std::end(game_fxaa)) {
+            return;
+        }
     }
     const auto& regs = Regs();
     // gow3: the pass copying a finished frame to a display buffer; the previous draw's

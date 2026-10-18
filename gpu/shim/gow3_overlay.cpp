@@ -391,8 +391,9 @@ void ImageTab() {
     const bool upscaling = iw < ww && ih < wh;
     const bool downscaling = iw > ww || ih > wh;
     const bool rcas_blocked = s.rcas && !s.rcas_applied;
-    ImGui::SeparatorText("Scaling and sharpening");
+    ImGui::SeparatorText("Anti-aliasing, scaling and sharpening");
     if (BeginRows("##scaling")) {
+        CheckRow("Anti-aliasing (FXAA)", s.fxaa, "The game's own edge smoothing, as on the PS4. Off: sharper, with jagged edges.");
         CheckRow("Upscale with FSR 1", s.fsr1,
                  "Enlarges a smaller game image to the window. For more FPS: Render resolution 720p + FSR 1.");
         ImGui::BeginDisabled(rcas_blocked);
