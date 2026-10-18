@@ -62,8 +62,8 @@ class ControlMapTest(unittest.TestCase):
         for key in ('game_dir', 'user_dir', 'mods_dir', 'patches_dir', 'language', 'player_name', 'hdr',
                     'draw_pipe', 'readbacks', 'background_warmup', 'parallel_warmup', 'controls', 'pad_style'):
             self.assertIn(key, launcher.APP_DEFAULTS)
-        env = launcher.game_environment({**launcher.APP_DEFAULTS, 'player_name': ' Kratos '})
-        self.assertEqual(env['GOW3_USER_NAME'], 'Kratos')
+        env = launcher.game_environment({**launcher.APP_DEFAULTS, 'player_name': ' Kat '})
+        self.assertEqual(env['GOW3_USER_NAME'], 'Kat')
         for key in ('display_mode', 'fps_limit', 'render_resolution', 'engine_fps', 'rcas_strength'):
             self.assertIn(key, launcher.INI_DEFAULTS)
 

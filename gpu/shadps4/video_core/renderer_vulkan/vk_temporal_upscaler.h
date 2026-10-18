@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// gow3: temporal upscaling of the HDR scene color (docs/upscaler.md). Off for God of War III
-// until its scene color, depth and camera constants are found (run.py). GOW3_UPSCALER=fsr3
+// gow3: temporal anti-aliasing and upscaling (gravityrush.ini upscaler). GOW3_UPSCALER=fsr3
 // runs FSR 3.1 (FireBurn/FSR-Vulkan, native Vulkan) on the scene color right before the
 // post-processing combine pass, with the scene depth and camera motion vectors, and writes the
 // result back so the game's own post, tonemap and UI continue unchanged (Native AA preset).
@@ -64,7 +63,7 @@ public:
     /// Before a compute dispatch: the post-processing combine shader triggers the upscale.
     void OnDispatch(u64 cs_hash);
 
-    /// gow3: Gravity Rush (default; GOW3_UPSCALER_GOW3=1 restores God of War III's placement):
+    /// gow3: Gravity Rush placement (default; GOW3_UPSCALER_GOW3=1 restores the generic one):
     /// temporal AA at the game's own render size on the HDR scene color, no scaled presets.
     [[nodiscard]] bool GravityRush() const noexcept {
         return gravity_rush;

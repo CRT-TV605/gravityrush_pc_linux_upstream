@@ -74,7 +74,7 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
     main_port.resolution.pane_width = width;
     main_port.resolution.pane_height = height;
     // A 120 Hz+ vblank is reported as a 119.88 Hz display: engines that pace to the display's
-    // refresh (Unreal Engine 4 on PS4) then run up to 120 FPS.
+    // refresh then run up to 120 FPS.
     if (EmulatorSettings.GetVblankFrequency() >= 120) {
         main_port.resolution.refresh_rate = SCE_VIDEO_OUT_REFRESH_RATE_119_88HZ;
     }
@@ -666,7 +666,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // until its slot; slots advance by one period (no drift) but never lag behind by more.
     // gow3: the in-game menu changes the limit live (Gow3Settings::fps_limit); GOW3_FPS_LIMIT
     // and the uncapped presets keep their fixed limit.
-    // Unreal Engine 4 games: in the uncapped mode a lower in-game limit still applies on top.
+    // In the uncapped mode a lower in-game limit still applies on top.
     const bool env_limit = std::getenv("GOW3_FPS_LIMIT") != nullptr;
     const bool fixed_limit = env_limit || EmulatorSettings.GetVblankFrequency() == 480;
     const auto current_limit = [&] {

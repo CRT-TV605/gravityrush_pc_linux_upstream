@@ -910,7 +910,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break; // registers: ApplyGraphicsRegisterPacket
             }
             case PM4ItOpcode::SetPredication: {
-                // gow3: once; God of War III sets it around most draws (~1000 lines a frame).
+                // gow3: once; a game may set it around most draws (~1000 lines a frame).
                 static std::once_flag predication_logged;
                 std::call_once(predication_logged,
                                [] { LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION"); });

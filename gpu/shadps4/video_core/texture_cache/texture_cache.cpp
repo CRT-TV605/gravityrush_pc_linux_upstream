@@ -106,7 +106,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
     {
         std::scoped_lock lock{readback_mutex};
-        // Stale mode, byte rule: God of War III writes every frame to the page that holds a
+        // Stale mode, byte rule: a game may write every frame to the page that holds a
         // 1x1 exposure copy, but not to its bytes. That write need not wait for the GPU: the
         // copy only stops protecting its page and is still published when the GPU is done.
         if (stale_readbacks && source == ReadbackSource::CpuWrite) {
@@ -158,7 +158,7 @@ void TextureCache::CancelReadbacks(VAddr address, u64 size) {
 }
 
 // gow3: every copy is recorded first and the GPU is waited for once. A wait per image (as
-// before) left the GPU mostly idle in God of War III's gameplay, at about 2 FPS.
+// before) left the GPU mostly idle in gameplay, at about 2 FPS.
 void TextureCache::ProcessDownloadImages() {
     if (deferred_readbacks) {
         // Upload workers must finish reading RAM before these pages become inaccessible.
