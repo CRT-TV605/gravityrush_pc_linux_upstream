@@ -2049,6 +2049,10 @@ class LauncherWindow:
         logic = self.logic
         env = logic.game_environment(self.app)
         self.log_lines = []
+        try:  # the game, started through run.py, may bring its own window to the front
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+        except (AttributeError, OSError):
+            pass
         try:
             self.process = subprocess.Popen(logic.run_command(), cwd=logic.PORT_DIR, env=env, stdin=subprocess.DEVNULL,
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=logic.NO_WINDOW)
@@ -2117,6 +2121,22 @@ class LauncherWindow:
             return
         self.modal(t('In game'), t('The game is running in its own window.'),
                    [('Stop the game', self.stop_game, False), ('Close the launcher', self.quit, True)])
+        # The game plays in its own window: the launcher steps aside to the taskbar (where it shows
+        # this dialog) and comes back when the game exits.
+        self.stepped_aside = True
+        self.minimize()
+
+    def come_back(self):
+        """The launcher returns to the front after the game."""
+        root = self.root
+        try:
+            root.deiconify()
+            root.lift()
+            root.attributes('-topmost', True)
+            root.after(300, lambda: root.attributes('-topmost', False))
+            root.focus_force()
+        except self.tk.TclError:
+            pass
 
     def stop_game(self):
         if self.job:
@@ -2129,6 +2149,9 @@ class LauncherWindow:
             self.job = None
         self.close_modal()
         self.refresh_status()
+        if getattr(self, 'stepped_aside', False):
+            self.stepped_aside = False
+            self.come_back()
         self.toast(t('The game exited.'))
 
 
