@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The Gravity Rush launcher window (Tkinter), after the design in DESIGN-launcher.md.
+"""The Gravity Rush launcher window (Tkinter).
 
-Comic-book look: the background picture fills the window, the menu is a column of ink-outlined
-capsules with a point on the right, pages open in a paper panel with a hard shadow and a tilted
-tab. Shapes are drawn with Pillow (Tk has no clip paths or skew), the rest is Tk widgets on the
-paper. Only what the port really does is shown.
+A fixed layout that never overlaps: a dark glass sidebar on the left (brand, menu, status, the
+play button), the background picture on the right, pages in an opaque card beside the sidebar,
+dialogs and notices in that area too. Shapes, icons and labels are drawn with Pillow (Tk has no
+anti-aliasing, clip paths or blur), the controls are Tk widgets on the card. Only what the port
+really does is shown.
 
 The logic (settings, run.py environment, saves, game process) is the one of
 gravityrush_launcher.py, passed in as `logic`.
@@ -22,7 +23,7 @@ import threading
 import time
 import webbrowser
 
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageTk
 
 # Frozen (Gravity Rush Launcher.exe), the code runs from PyInstaller's temporary folder: the files live in
 # the launcher folder beside the executable.
@@ -31,15 +32,22 @@ FONT_FILE = HERE / 'fonts' / 'Cabin.ttf'
 BACKGROUND = HERE / 'assets' / 'background.png'   # a player's own picture (optional, never in the repository)
 DEFAULT_BACKGROUND = HERE / 'background.jpg'      # the launcher's own picture (no game characters)
 
-# Design size (DESIGN-launcher.md); everything is scaled from it.
+# Design size; everything is scaled from it.
 W, H = 1120, 700
+SIDEBAR_W = 272
 
-INK, PAPER, PAPER2 = '#1b1d1e', '#f4efd5', '#e3ddb9'
-OR, OR2, BL, BL2 = '#c8473a', '#9b3328', '#1d7d70', '#8fdcc4'
-GD, GR, CUBE = '#d4a83c', '#5cbf63', '#4b9fd1'
-MU, SD, TX = '#5a5f58', '#2c302e', '#171a26'
-SHADOW = (10, 14, 13, 153)
-DASH = '#b8b5a0'      # the dashed row line: ink at 28 % over paper
+# Dark theme: glass over the background picture, opaque cards for the pages (Tk widgets need a
+# solid background), one gold accent.
+CARD, FIELD, FIELD_HI = '#12171d', '#1b222b', '#232c37'   # card and dialogs; inputs (normal, hover)
+LINE, LINE2, LINE3 = '#252e38', '#34404d', '#465361'       # rules, input borders, hovered borders
+TEXT, TEXT2, TEXT3 = '#eef1f5', '#a9b2be', '#76818f'       # text, secondary text, captions
+ACCENT, ACCENT_HI, ACCENT_LO, ON_ACCENT = '#f0b23e', '#f6c45f', '#d89a27', '#1b1306'
+OK_C, WARN_C = '#43c584', '#f0a63e'
+CONSOLE_BG = '#0b0f14'
+GLASS = (11, 15, 20, 222)  # the sidebar over the picture
+# The names the pages use.
+PAPER, PAPER2, INK, MU, SD, TX = CARD, FIELD_HI, CONSOLE_BG, TEXT2, TEXT, TEXT
+UI_FONT, UI_FONT_SEMI = 'Segoe UI', 'Segoe UI Semibold'  # Windows' own font
 
 # ---------------------------------------------------------------------------------------------
 # Texts in the European set (EFIGS: English, French, Italian, German, Spanish). Each row: English,
@@ -55,6 +63,7 @@ _ROWS = [
     ('Log & diagnostics', 'Log e diagnostica', 'Journal et diagnostic', 'Protokoll & Diagnose', 'Registro y diagnóstico'),
     ('Quit', 'Esci', 'Quitter', 'Beenden', 'Salir'),
     ('VERSION {}', 'VERSIONE {}', 'VERSION {}', 'VERSION {}', 'VERSIÓN {}'),
+    ('Version {}', 'Versione {}', 'Version {}', 'Version {}', 'Versión {}'),
     ('FOLDERS', 'CARTELLE', 'DOSSIERS', 'ORDNER', 'CARPETAS'),
     ('Game folder', 'Cartella del gioco', 'Dossier du jeu', 'Spielordner', 'Carpeta del juego'),
     ('Your game dump (eboot.bin, sce_module, sce_sys).', 'Il tuo dump del gioco (eboot.bin, sce_module, sce_sys).',
@@ -374,26 +383,38 @@ def rgba(color, alpha=255):
 
 
 _fonts = {}
+FONT_FILES = {400: 'segoeui.ttf', 600: 'seguisb.ttf', 700: 'segoeuib.ttf'}
+WINDOWS_FONTS = Path(os.environ.get('WINDIR', r'C:\Windows')) / 'Fonts'
 
 
-def pil_font(size, weight=700):
+def pil_font(size, weight=600):
+    """Segoe UI at 400, 600 or 700 (Cabin, shipped with the launcher, where it is missing)."""
+    weight = 400 if weight < 500 else 600 if weight < 650 else 700
     key = (round(size), weight)
     if key not in _fonts:
         try:
-            font = ImageFont.truetype(str(FONT_FILE), max(1, round(size)))
-            font.set_variation_by_axes([weight, 100])
-        except (OSError, ValueError):
-            font = ImageFont.load_default(size)
+            font = ImageFont.truetype(str(WINDOWS_FONTS / FONT_FILES[weight]), max(1, round(size)))
+        except OSError:
+            try:
+                font = ImageFont.truetype(str(FONT_FILE), max(1, round(size)))
+                font.set_variation_by_axes([weight, 100])
+            except (OSError, ValueError):
+                font = ImageFont.load_default(size)
         _fonts[key] = font
     return _fonts[key]
 
 
-def text_width(text, font, spacing):
+def text_width(text, font, spacing=0.0):
+    if not spacing:
+        return font.getlength(text)
     return sum(font.getlength(c) for c in text) + spacing * max(0, len(text) - 1)
 
 
 def draw_text(draw, x, y, text, font, fill, spacing=0.0, stroke=0, stroke_fill=None):
     """Text with letter spacing (Pillow has none), from the top-left of its ink box."""
+    if not spacing:
+        draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
+        return
     for c in text:
         draw.text((x, y), c, font=font, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
         x += font.getlength(c) + spacing
@@ -405,35 +426,91 @@ def text_top(font, height):
     return (height - (box[3] - box[1])) / 2 - box[1]
 
 
-def capsule(w, h, point):
-    return [(0, 0), (w - point, 0), (w, h / 2), (w - point, h), (0, h)]
+def text_in(draw, x, y0, height, text, font, fill, spacing=0.0):
+    """Text whose capitals sit centred in the band y0 .. y0 + height."""
+    draw_text(draw, x, y0 + text_top(font, height), text, font, fill, spacing)
 
 
-def draw_icon(img, kind, x0, y0, size):
-    """The mock-up's 16x16 icons: green crystal ("ok"), red crystal ("warn"), blue cube."""
-    u = size / 16
+def fit(text, font, limit):
+    """The text, cut with an ellipsis to fit `limit`."""
+    while text and text_width(text, font) > limit:
+        text = text[:-2] + '…'
+    return text
+
+
+def paint_icon(img, kind, x0, y0, size, color, stroke=2.0):
+    """Line icons on a 24-unit grid (after Lucide), drawn into img at (x0, y0), size wide."""
+    u = size / 24
     d = ImageDraw.Draw(img)
+    c = rgba(color)
+    w = max(1, round(stroke * u))
 
-    def pts(*coords):
-        return [(x0 + x * u, y0 + y * u) for x, y in coords]
-    if kind in ('ok', 'warn'):
-        d.polygon(pts((8, 1.5), (13, 6), (8, 14.5), (3, 6)), fill=rgba(GR if kind == 'ok' else OR), outline=rgba(INK),
-                  width=max(1, round(1.6 * u)))
-        facets = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        fd = ImageDraw.Draw(facets)
-        fd.line(pts((3, 6), (13, 6)), fill=rgba(INK, 115), width=max(1, round(u)))
-        fd.line(pts((8, 1.5), (8, 14.5)), fill=rgba(INK, 115), width=max(1, round(u)))
-        img.alpha_composite(facets)
-    else:
-        d.polygon(pts((8, 1.5), (13.5, 4.5), (13.5, 11.5), (8, 14.5), (2.5, 11.5), (2.5, 4.5)), fill=rgba(CUBE),
-                  outline=rgba(INK), width=max(1, round(1.6 * u)))
-        width = max(1, round(1.1 * u))
-        for end in ((13.5, 4.5), (8, 14.5), (2.5, 4.5)):
-            d.line(pts((8, 8), end), fill=rgba(INK), width=width)
+    def p(x, y):
+        return (x0 + x * u, y0 + y * u)
+
+    def line(*points, closed=False):
+        pts = [p(x, y) for x, y in points] + ([p(*points[0])] if closed else [])
+        d.line(pts, fill=c, width=w, joint='curve')
+        if not closed:
+            for x, y in (pts[0], pts[-1]):  # round caps
+                d.ellipse((x - w / 2, y - w / 2, x + w / 2, y + w / 2), fill=c)
+
+    def box(x1, y1, x2, y2, r):
+        d.rounded_rectangle((*p(x1, y1), *p(x2, y2)), r * u, outline=c, width=w)
+
+    def dot(cx, cy, r):
+        d.ellipse((*p(cx - r, cy - r), *p(cx + r, cy + r)), fill=c)
+
+    if kind == 'folder':
+        box(2, 6.5, 22, 20, 2)
+        line((2, 9), (2, 5.5), (3.5, 4), (9, 4), (11, 6.5))
+    elif kind == 'monitor':
+        box(2, 3, 22, 16.5, 2)
+        line((8, 21), (16, 21))
+        line((12, 16.5), (12, 21))
+    elif kind == 'gamepad':
+        box(2, 6, 22, 18, 6)
+        line((6, 12), (10, 12))
+        line((8, 10), (8, 14))
+        dot(15, 13.2, 1.3)
+        dot(18, 10.8, 1.3)
+    elif kind == 'sliders':
+        line((21, 5), (14, 5))
+        line((10, 5), (3, 5))
+        line((21, 12), (12, 12))
+        line((8, 12), (3, 12))
+        line((21, 19), (16, 19))
+        line((12, 19), (3, 19))
+        line((14, 3), (14, 7))
+        line((8, 10), (8, 14))
+        line((16, 17), (16, 21))
+    elif kind == 'terminal':
+        box(2, 3.5, 22, 20.5, 2.5)
+        line((6.5, 9), (10, 12), (6.5, 15))
+        line((12.5, 15), (17.5, 15))
+    elif kind == 'play':
+        pts = [p(7, 4.5), p(19.5, 12), p(7, 19.5)]
+        d.polygon(pts, fill=c)
+        d.line(pts + [pts[0]], fill=c, width=w, joint='curve')
+    elif kind == 'check':
+        d.ellipse((*p(2, 2), *p(22, 22)), outline=c, width=w)
+        line((7.5, 12.5), (10.5, 15.5), (16.5, 9))
+    elif kind == 'alert':
+        line((12, 3), (22, 20), (2, 20), closed=True)
+        line((12, 9.5), (12, 13.5))
+        dot(12, 16.8, 1.2)
+    elif kind == 'clock':
+        d.ellipse((*p(2, 2), *p(22, 22)), outline=c, width=w)
+        line((12, 7), (12, 12), (15.5, 14))
+    elif kind == 'x':
+        line((6, 6), (18, 18))
+        line((18, 6), (6, 18))
+    elif kind == 'chevron':
+        line((6, 9), (12, 15), (18, 9))
 
 
 class Painter:
-    """Every picture of the window, at the window's scale."""
+    """Every picture of the window, at the window's scale: drawn at twice the size, then reduced."""
 
     def __init__(self, scale):
         self.s = scale
@@ -447,248 +524,248 @@ class Painter:
     def done(self, image):
         return image.resize((image.width // 2, image.height // 2), Image.LANCZOS)
 
-    def nav_button(self, w, h, label, look, small=False, go=False):
-        """A menu capsule: ink outline with a point, paper inside, hard shadow (4 px)."""
+    def soft_shadow(self, img, box, radius, blur, alpha, offset=(0, 8)):
+        """A blurred shadow under `box` (canvas units), `blur` and `offset` in design units."""
         k = self.s * 2
-        img = self.canvas(w + 4, h + 4)
+        shade = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        x0, y0, x1, y1 = box
+        dx, dy = offset[0] * k, offset[1] * k
+        ImageDraw.Draw(shade).rounded_rectangle((x0 + dx, y0 + dy, x1 + dx, y1 + dy), radius, fill=(0, 0, 0, alpha))
+        img.alpha_composite(shade.filter(ImageFilter.GaussianBlur(blur * k)))
+
+    def sidebar(self, height):
+        """Dark glass over the picture, a hairline on its right edge."""
+        k = self.s * 2
+        img = self.canvas(SIDEBAR_W, height)
         d = ImageDraw.Draw(img)
-        outer = [(x * k, y * k) for x, y in capsule(w, h, 20)]
-        d.polygon([(x + 4 * k, y + 4 * k) for x, y in outer], fill=SHADOW)
-        d.polygon(outer, fill=rgba(INK))
-        fill = {'normal': PAPER, 'hover': PAPER2, 'on': BL, 'go': OR, 'go_hover': '#d9574a'}[look]
-        inner = [(3 * k, 3 * k), ((w - 4 - 18) * k, 3 * k), ((w - 4) * k, h / 2 * k), ((w - 4 - 18) * k, (h - 3) * k),
-                 (3 * k, (h - 3) * k)]
-        d.polygon(inner, fill=rgba(fill))
-        color = rgba('#ffffff') if go else rgba(PAPER) if look == 'on' else rgba(INK)
-        if go:
-            size, spacing, left = (17, .12, 14) if small else (20, .16, 18)
-        else:
-            size, spacing, left = (12, .03, 14) if small else (14.5, .1, 18)
-        font = pil_font(size * k)
-        x = (3 + left) * k
-        if go:  # play triangle
-            tri = 16 * k
-            y0 = (h - 16) / 2 * k
-            d.polygon([(x, y0 + 1 * k), (x + tri * 0.86, y0 + tri / 2), (x, y0 + tri - 1 * k)], fill=color)
-            x += tri + 10 * k
-        draw_text(d, x, text_top(font, h * k), label.upper(), font, color, spacing * size * k)
+        d.rectangle((0, 0, img.width, img.height), fill=GLASS)
+        d.rectangle((img.width - max(1, round(k)), 0, img.width, img.height), fill=(255, 255, 255, 22))
         return self.done(img)
 
-    def brand(self, scale):
-        """The ribbon and the title (Cabin Bold with an ink outline and a red shadow)."""
-        k = self.s * scale * 2
-        ribbon_font, title_font = pil_font(12.5 * k), pil_font(58 * k)
-        title = 'GRAVITY RUSH'
-        tw = text_width(title, title_font, .03 * 58 * k)
-        rw = text_width('REMASTERED', ribbon_font, .36 * 12.5 * k) + 42 * k
-        rh = 23 * k
-        width, height = max(tw + 20 * k, rw) + 10 * k, rh + 8 * k + 66 * k + 10 * k
-        img = Image.new('RGBA', (int(width), int(height)), (0, 0, 0, 0))
+    def scrim(self, width, height):
+        """A shade at the top of the picture, so the window buttons read on a bright sky."""
+        img = Image.new('RGBA', (self.px(width), self.px(height)), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.polygon([(0, 0), (rw - 12 * k, 0), (rw, rh / 2), (rw - 12 * k, rh), (0, rh)], fill=rgba(GD))
-        draw_text(d, 14 * k, text_top(ribbon_font, rh), 'REMASTERED', ribbon_font, rgba(INK), .36 * 12.5 * k)
-        y = rh + 8 * k
-        stroke = max(1, round(4 * k))
-        draw_text(d, 4 * k + 4 * k, y + 5 * k, title, title_font, rgba(OR), .03 * 58 * k, stroke, rgba(OR))
-        draw_text(d, 4 * k, y, title, title_font, rgba(PAPER), .03 * 58 * k, stroke, rgba(INK))
-        return img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.LANCZOS)
+        for y in range(img.height):
+            d.line([(0, y), (img.width, y)], fill=(8, 11, 15, int(120 * (1 - y / img.height) ** 1.7)))
+        return img
 
-    def panel(self, w, h, tab=None):
-        """The paper panel: ink border, 6 px corners, hard shadow 8 px, halftone dots, tilted tab."""
+    def brand(self, icon):
+        """The port's icon (a rounded tile), the wordmark and REMASTERED."""
         k = self.s * 2
-        top = 24 if tab else 0
-        img = self.canvas(w + 8, h + 8 + top)
+        img = self.canvas(236, 48)
         d = ImageDraw.Draw(img)
-        y0 = top * k
-        d.rounded_rectangle((8 * k, y0 + 8 * k, (w + 8) * k, y0 + (h + 8) * k), 6 * k, fill=SHADOW)
-        d.rounded_rectangle((0, y0, w * k, y0 + h * k), 6 * k, fill=rgba(PAPER), outline=rgba(INK), width=round(3 * k))
-        # Halftone dots, fading from the top-right corner.
-        dots = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        dd = ImageDraw.Draw(dots)
-        step, r = 10 * k, 1.6 * k
-        x_start = (w - 190) * k
-        for row in range(int(120 * k // step) + 1):
-            for col in range(int(190 * k // step) + 1):
-                cx, cy = x_start + col * step + step / 2, y0 + 3 * k + row * step + step / 2
-                if cx > (w - 4) * k or cy > y0 + 120 * k:
-                    continue
-                # 225 degree gradient: strongest at the top-right corner, gone at 70 %.
-                fx, fy = ((w * k) - cx) / (190 * k), (cy - y0) / (120 * k)
-                fade = max(0.0, 1 - (fx + fy) / 1.4)
-                if fade > 0:
-                    dd.ellipse((cx - r, cy - r, cx + r, cy + r), fill=rgba(OR, int(51 * fade)))
-        img.alpha_composite(dots)
-        if tab:
-            font = pil_font(15 * k)
-            tw = text_width(tab.upper(), font, .14 * 15 * k)
-            tx, th = 22 * k, 34 * k
-            ty = y0 - 19 * k
-            skew = th * math.tan(math.radians(10))
-            pts = [(tx + skew, ty), (tx + tw + 48 * k + skew, ty), (tx + tw + 48 * k, ty + th), (tx, ty + th)]
-            d.polygon([(x + 3 * k, y + 3 * k) for x, y in pts], fill=SHADOW)
-            d.polygon(pts, fill=rgba(OR), outline=rgba(INK), width=round(3 * k))
-            draw_text(d, tx + 24 * k + skew / 2, ty + text_top(font, th), tab.upper(), font, rgba(PAPER), .14 * 15 * k)
+        if icon is not None:
+            size = round(46 * k)
+            img.alpha_composite(icon.resize((size, size), Image.LANCZOS), (0, round(1 * k)))
+        text_in(d, 58 * k, 4 * k, 24 * k, 'GRAVITY RUSH', pil_font(19 * k, 700), rgba(TEXT), .05 * 19 * k)
+        text_in(d, 59 * k, 29 * k, 14 * k, 'REMASTERED', pil_font(10.5 * k, 600), rgba(ACCENT), .3 * 10.5 * k)
+        return self.done(img)
+
+    def nav_item(self, label, icon, look):
+        """A menu entry: icon and label; a tint on hover; the open page gold, with a bar."""
+        k = self.s * 2
+        w, h = NAV_W, NAV_H
+        img = self.canvas(w, h)
+        d = ImageDraw.Draw(img)
+        if look == 'hover':
+            d.rounded_rectangle((0, 0, w * k, h * k), 8 * k, fill=(255, 255, 255, 18))
+        elif look == 'on':
+            d.rounded_rectangle((0, 0, w * k, h * k), 8 * k, fill=rgba(ACCENT, 36))
+            d.rounded_rectangle((0, 12 * k, 3 * k, (h - 12) * k), 1.5 * k, fill=rgba(ACCENT))
+        dim = '#c2cad4'
+        paint_icon(img, icon, 16 * k, (h - 20) / 2 * k, 20 * k, ACCENT if look == 'on' else TEXT if look == 'hover' else dim)
+        font = pil_font(14 * k, 600)
+        text_in(d, 50 * k, 0, h * k, fit(label, font, (w - 62) * k), font, rgba(dim if look == 'normal' else TEXT))
+        return self.done(img)
+
+    def play_button(self, label, look):
+        """The big gold play button (with its soft shadow below)."""
+        k = self.s * 2
+        w, h = PLAY_W, PLAY_H
+        img = self.canvas(w + 16, h + 20)
+        box = (8 * k, 4 * k, (8 + w) * k, (4 + h) * k)
+        self.soft_shadow(img, box, 10 * k, 7, 30 if look == 'press' else 90, offset=(0, 4))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle(box, 10 * k, fill=rgba({'normal': ACCENT, 'hover': ACCENT_HI, 'press': ACCENT_LO}[look]))
+        font = pil_font(16 * k, 700)
+        spacing = .14 * 16 * k
+        icon, gap = 15 * k, 11 * k
+        x = box[0] + (w * k - (icon + gap + text_width(label, font, spacing))) / 2
+        paint_icon(img, 'play', x, box[1] + (h * k - icon) / 2, icon, ON_ACCENT)
+        text_in(d, x + icon + gap, box[1], h * k, label, font, rgba(ON_ACCENT), spacing)
+        return self.done(img)
+
+    def status_line(self, text, icon, color, width):
+        """A status line of the sidebar: a small icon and the text."""
+        k = self.s * 2
+        h = 24
+        img = self.canvas(width, h)
+        d = ImageDraw.Draw(img)
+        paint_icon(img, icon, 0, (h - 16) / 2 * k, 16 * k, color)
+        font = pil_font(12.5 * k, 400)
+        text_in(d, 26 * k, 0, h * k, fit(text, font, (width - 26) * k), font, rgba(TEXT2))
+        return self.done(img)
+
+    def panel(self, w, h, title=None):
+        """A card (pages, dialogs): opaque, 14 px corners, a hairline edge and a soft shadow; with
+        a title, the title and a rule under it. The picture starts 28 px before the card."""
+        k = self.s * 2
+        pad = 28
+        img = self.canvas(w + 2 * pad, h + 2 * pad)
+        box = (pad * k, pad * k, (pad + w) * k, (pad + h) * k)
+        self.soft_shadow(img, box, 14 * k, 18, 150)
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle(box, 14 * k, fill=rgba(CARD), outline=(255, 255, 255, 24), width=max(1, round(k)))
+        if title:
+            text_in(d, (pad + 28) * k, (pad + 14) * k, 36 * k, title, pil_font(21 * k, 600), rgba(TEXT))
+            y = (pad + 62) * k
+            d.rectangle(((pad + 1) * k, y, (pad + w - 1) * k, y + max(1, round(k))), fill=rgba(LINE))
+        return self.done(img)
+
+    def icon_button(self, icon, hover):
+        """A round 32 px button with an icon (the card's close button)."""
+        k = self.s * 2
+        img = self.canvas(32, 32)
+        if hover:
+            ImageDraw.Draw(img).ellipse((0, 0, 32 * k, 32 * k), fill=rgba(FIELD_HI))
+        paint_icon(img, icon, 8 * k, 8 * k, 16 * k, TEXT if hover else TEXT2)
         return self.done(img)
 
     def toggle(self, on):
         k = self.s * 2
-        img = self.canvas(48, 26)
+        img = self.canvas(40, 22)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((k, k, 47 * k, 25 * k), 13 * k, fill=rgba(BL if on else '#cfcdb0'), outline=rgba(INK),
-                            width=round(2.5 * k))
-        cx = (48 - 4 - 10) * k if on else (4 + 10) * k
-        d.ellipse((cx - 8 * k, 5 * k, cx + 8 * k, 21 * k), fill=rgba(PAPER if on else INK))
+        d.rounded_rectangle((0, 0, 40 * k, 22 * k), 11 * k, fill=rgba(ACCENT if on else '#3a4451'))
+        cx = 29 * k if on else 11 * k
+        d.ellipse((cx - 8 * k, 3 * k, cx + 8 * k, 19 * k), fill=rgba('#ffffff' if on else '#d3d9e0'))
         return self.done(img)
 
-    def pill(self, text, on, size=12.5, height=36, padding=10):
+    def pill(self, text, on, size=13, height=32, padding=12):
+        """An option of a choice row: gold when chosen, else a field."""
         k = self.s * 2
-        font = pil_font(size * k)
-        w = text_width(text, font, 0) / k + padding * 2 + 6
+        font = pil_font(size * k, 600)
+        w = text_width(text, font) / k + padding * 2
         img = self.canvas(w, height)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((k, k, (w - 1) * k, (height - 1) * k), height / 2 * k, fill=rgba(BL if on else '#ffffff'),
-                            outline=rgba(INK), width=round(2.5 * k))
-        draw_text(d, (padding + 3) * k, text_top(font, height * k), text, font, rgba(PAPER if on else SD))
+        if on:
+            d.rounded_rectangle((0, 0, w * k, height * k), 8 * k, fill=rgba(ACCENT))
+        else:
+            d.rounded_rectangle((0, 0, w * k, height * k), 8 * k, fill=rgba(FIELD), outline=rgba(LINE2), width=max(1, round(k)))
+        text_in(d, padding * k, 0, height * k, text, font, rgba(ON_ACCENT if on else TEXT2))
         return self.done(img)
 
     def button(self, text, kind, look):
-        """pri / gh / sm buttons: ink border, hard shadow that grows on hover and goes on press."""
+        """pri (gold), gh (outlined), sm (a small field button) and chip (a key cap)."""
         k = self.s * 2
-        size = {'pri': 12.5, 'gh': 12.5, 'sm': 13.5, 'chip': 12}[kind]
-        height = {'pri': 44, 'gh': 44, 'sm': 38, 'chip': 28}[kind]
-        upper = kind in ('pri', 'gh')
-        label = text.upper() if upper else text
-        font = pil_font(size * k)
-        spacing = .04 * size * k if upper else 0
-        pad = 9 if kind == 'chip' else 14
-        w = text_width(label, font, spacing) / k + pad * 2 + 6
-        sh = {'pri': 3, 'gh': 3, 'sm': 2, 'chip': 0}[kind]
-        grow = {'normal': 0, 'hover': 2, 'press': -sh}[look]
-        off = {'normal': 0, 'hover': -1, 'press': sh}[look]
-        img = self.canvas(w + 6, height + 6)
+        size = {'pri': 13.5, 'gh': 13.5, 'sm': 13, 'chip': 12}[kind]
+        height = {'pri': 38, 'gh': 38, 'sm': 34, 'chip': 28}[kind]
+        font = pil_font(size * k, 600)
+        pad = {'pri': 18, 'gh': 18, 'sm': 14, 'chip': 10}[kind]
+        w = max(text_width(text, font) / k + pad * 2, {'pri': 96, 'gh': 96, 'sm': 0, 'chip': 46}[kind])
+        img = self.canvas(w, height + 1)
         d = ImageDraw.Draw(img)
-        x0, y0 = (1 + off) * k + k, (1 + off) * k + k
-        x1, y1 = x0 + w * k, y0 + height * k
-        if sh + grow > 0:
-            d.rounded_rectangle((x0 + (sh + grow) * k, y0 + (sh + grow) * k, x1 + (sh + grow) * k, y1 + (sh + grow) * k),
-                                7 * k, fill=rgba(INK))
-        fill = rgba(OR if kind == 'pri' else '#ffffff')
-        border = 2 if kind == 'chip' else 2.5 if kind == 'sm' else 3
-        d.rounded_rectangle((x0, y0, x1, y1), 7 * k, fill=fill, outline=rgba(INK), width=round(border * k))
-        if kind == 'chip':  # thicker bottom edge
-            d.rectangle((x0 + 4 * k, y1 - 3 * k, x1 - 4 * k, y1), fill=rgba(INK))
-        color = rgba('#ffffff' if kind == 'pri' else INK)
-        draw_text(d, x0 + (pad + 3) * k, y0 + text_top(font, (height - (2 if kind == 'chip' else 0)) * k), label,
-                  font, color, spacing)
+        r = (6 if kind == 'chip' else 8) * k
+        y = k if look == 'press' else 0
+        edge = max(1, round(k))
+        if kind == 'pri':
+            d.rounded_rectangle((0, y, w * k, y + height * k), r,
+                                fill=rgba({'normal': ACCENT, 'hover': ACCENT_HI, 'press': ACCENT_LO}[look]))
+            color = ON_ACCENT
+        elif kind == 'gh':
+            d.rounded_rectangle((0, y, w * k, y + height * k), r, fill=rgba({'normal': CARD, 'hover': FIELD, 'press': FIELD_HI}[look]),
+                                outline=rgba(LINE2 if look == 'normal' else LINE3), width=edge)
+            color = TEXT
+        elif kind == 'sm':
+            d.rounded_rectangle((0, y, w * k, y + height * k), r, fill=rgba({'normal': FIELD, 'hover': FIELD_HI, 'press': '#2a3440'}[look]),
+                                outline=rgba(LINE2 if look == 'normal' else LINE3), width=edge)
+            color = TEXT
+        else:  # a key cap: a darker lower edge
+            d.rounded_rectangle((0, y + 2 * k, w * k, y + height * k), r, fill=rgba('#0d1116'))
+            d.rounded_rectangle((0, y, w * k, y + (height - 2) * k), r, fill=rgba(FIELD_HI if look != 'normal' else FIELD),
+                                outline=rgba(LINE2 if look == 'normal' else LINE3), width=edge)
+            color = TEXT
+        band = (height - (2 if kind == 'chip' else 0)) * k
+        text_in(d, (w * k - text_width(text, font)) / 2, y, band, text, font, rgba(color))
         return self.done(img)
 
     def field(self, text, width, hover=False):
-        """A select's face: white field, 8 px corners, ink border, the text and a chevron."""
+        """A select's face: a field with the text and a chevron."""
         k = self.s * 2
-        h = 38
+        h = 34
         img = self.canvas(width, h)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((k, k, (width - 1) * k, (h - 1) * k), 8 * k, fill=rgba(PAPER2 if hover else '#ffffff'),
-                            outline=rgba(INK), width=round(2.5 * k))
-        font = pil_font(14.5 * k, 600)
-        limit = (width - 44) * k
-        while text and text_width(text, font, 0) > limit:
-            text = text[:-2] + '…'
-        draw_text(d, 12 * k, text_top(font, h * k), text, font, rgba(TX))
-        cx, cy = (width - 18) * k, h / 2 * k
-        d.line([(cx - 5 * k, cy - 2.5 * k), (cx, cy + 2.5 * k), (cx + 5 * k, cy - 2.5 * k)], fill=rgba(INK),
-               width=round(2.2 * k), joint='curve')
+        d.rounded_rectangle((0, 0, width * k, h * k), 8 * k, fill=rgba(FIELD_HI if hover else FIELD),
+                            outline=rgba(LINE3 if hover else LINE2), width=max(1, round(k)))
+        font = pil_font(13.5 * k, 400)
+        text_in(d, 12 * k, 0, h * k, fit(text, font, (width - 42) * k), font, rgba(TEXT))
+        paint_icon(img, 'chevron', (width - 28) * k, (h - 16) / 2 * k, 16 * k, TEXT2)
         return self.done(img)
 
-    def entry_frame(self, width, height=38):
+    def entry_frame(self, width, height=34):
         k = self.s * 2
         img = self.canvas(width, height)
-        ImageDraw.Draw(img).rounded_rectangle((k, k, (width - 1) * k, (height - 1) * k), 8 * k, fill=rgba('#ffffff'),
-                                              outline=rgba(INK), width=round(2.5 * k))
-        return self.done(img)
-
-    def label(self, text, size, color, weight=700, spacing=0.0, upper=False, shadow=None):
-        k = self.s * 2
-        text = text.upper() if upper else text
-        font = pil_font(size * k, weight)
-        w = text_width(text, font, spacing * size * k) / k + 4
-        h = size * 1.5
-        img = self.canvas(w, h)
-        d = ImageDraw.Draw(img)
-        if shadow:
-            draw_text(d, 2 * k, text_top(font, h * k) + 1 * k, text, font, rgba(shadow), spacing * size * k)
-        draw_text(d, 2 * k, text_top(font, h * k), text, font, rgba(color), spacing * size * k)
+        ImageDraw.Draw(img).rounded_rectangle((0, 0, width * k, height * k), 8 * k, fill=rgba(FIELD), outline=rgba(LINE2),
+                                              width=max(1, round(k)))
         return self.done(img)
 
     def section(self, text):
-        """Section title: gold diamond, red-brown spaced capitals."""
+        """A section title: small spaced capitals."""
         k = self.s * 2
-        font = pil_font(12.5 * k)
-        w = text_width(text, font, .22 * 12.5 * k) / k + 26
-        h = 20
-        img = self.canvas(w, h)
-        d = ImageDraw.Draw(img)
-        cx, cy, r = 7.5 * k, h / 2 * k - 1 * k, 6.4 * k
-        d.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=rgba(GD), outline=rgba(INK),
-                  width=round(2 * k))
-        draw_text(d, 20 * k, text_top(font, h * k), text, font, rgba(OR2), .22 * 12.5 * k)
-        return self.done(img)
-
-    def status(self, text, icon):
-        """Bottom status pill: dark, thin light inner edge, crystal or cube icon."""
-        k = self.s * 2
-        font = pil_font(13.5 * k, 600)
-        w = text_width(text, font, 0) / k + 9 + 17 + 8 + 14
-        h = 30
-        img = self.canvas(w, h)
-        d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, w * k, h * k), h / 2 * k, fill=(27, 29, 30, 230))
-        d.rounded_rectangle((1.5 * k, 1.5 * k, (w - 1.5) * k, (h - 1.5) * k), (h / 2 - 1.5) * k,
-                            outline=(244, 239, 213, 56), width=round(1.5 * k))
-        draw_icon(img, icon, 9 * k, (h - 17) / 2 * k, 17 * k)
-        draw_text(d, (9 + 17 + 8) * k, text_top(font, h * k), text, font, rgba(PAPER))
+        font = pil_font(11.5 * k, 600)
+        spacing = .14 * 11.5 * k
+        h = 18
+        img = self.canvas(text_width(text, font, spacing) / k + 4, h)
+        text_in(ImageDraw.Draw(img), 0, 0, h * k, text, font, rgba(TEXT3), spacing)
         return self.done(img)
 
     def gauge(self, w, fraction, phase):
-        """The launch gauge: a pill with teal stripes and a point."""
+        """A thin progress bar: gold, with a lighter band running along the filled part."""
         k = self.s * 2
-        h = 20
+        h = 8
         img = self.canvas(w, h)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, w * k, h * k), h / 2 * k, fill=rgba('#cdd0b5'))
-        fill_w = max(0.0, min(1.0, fraction)) * (w - 6) * k
-        if fill_w > 2 * k:
-            stripes = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            sd = ImageDraw.Draw(stripes)
-            period = 24 * k
-            for i in range(-4, int(w * k / period) + 6):
-                x = i * period + phase * period
-                sd.polygon([(x, h * k), (x + 12 * k, h * k), (x + 12 * k + h * k * .47, 0), (x + h * k * .47, 0)],
-                           fill=rgba(BL))
-                sd.polygon([(x + 12 * k, h * k), (x + 24 * k, h * k), (x + 24 * k + h * k * .47, 0),
-                            (x + 12 * k + h * k * .47, 0)], fill=rgba(BL2))
-            mask = Image.new('L', img.size, 0)
-            ImageDraw.Draw(mask).polygon([(3 * k, 3 * k), (3 * k + fill_w - 9 * k, 3 * k), (3 * k + fill_w, h / 2 * k),
-                                          (3 * k + fill_w - 9 * k, (h - 3) * k), (3 * k, (h - 3) * k)], fill=255)
-            img.paste(stripes, (0, 0), mask)
-        d.rounded_rectangle((0, 0, w * k, h * k), h / 2 * k, outline=rgba(INK), width=round(3 * k))
+        d.rounded_rectangle((0, 0, w * k, h * k), h / 2 * k, fill=rgba(FIELD_HI))
+        fill_w = max(h, max(0.0, min(1.0, fraction)) * w) * k
+        mask = Image.new('L', img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, fill_w, h * k), h / 2 * k, fill=255)
+        layer = Image.new('RGBA', img.size, rgba(ACCENT))
+        x = (phase * 1.4 - .2) * fill_w
+        ImageDraw.Draw(layer).rectangle((x, 0, x + 48 * k, h * k), fill=rgba(ACCENT_HI))
+        img.paste(layer, (0, 0), mask)
         return self.done(img)
 
     def window_buttons(self, hover):
+        """Minimize and close, Windows-style: 46 x 32 cells, the close cell red on hover."""
         k = self.s * 2
-        img = self.canvas(88, 32)
+        img = self.canvas(92, 32)
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, 88 * k, 32 * k), 16 * k, fill=(27, 29, 30, 158))
-        # Drawn with lines: Cabin has no multiplication sign.
-        line = round(1.8 * k)
-        for i in range(2):
-            color = rgba(OR if hover == i else PAPER)
-            cx, cy = (4 + 40 * i + 20) * k, 16 * k
-            if i == 0:
-                d.line([(cx - 6 * k, cy + 1 * k), (cx + 6 * k, cy + 1 * k)], fill=color, width=line)
-            else:
-                d.line([(cx - 5 * k, cy - 5 * k), (cx + 5 * k, cy + 5 * k)], fill=color, width=line)
-                d.line([(cx - 5 * k, cy + 5 * k), (cx + 5 * k, cy - 5 * k)], fill=color, width=line)
+        if hover == 0:
+            d.rectangle((0, 0, 46 * k, 32 * k), fill=(255, 255, 255, 36))
+        elif hover == 1:
+            d.rectangle((46 * k, 0, 92 * k, 32 * k), fill=rgba('#e81123'))
+        width = max(1, round(1.2 * k))
+        cx, cy = 23 * k, 16 * k
+        d.line([(cx - 5 * k, cy), (cx + 5 * k, cy)], fill=rgba(TEXT), width=width)
+        cx = 69 * k
+        d.line([(cx - 5 * k, cy - 5 * k), (cx + 5 * k, cy + 5 * k)], fill=rgba(TEXT), width=width)
+        d.line([(cx - 5 * k, cy + 5 * k), (cx + 5 * k, cy - 5 * k)], fill=rgba(TEXT), width=width)
+        return self.done(img)
+
+    def toast(self, text):
+        """A notice: a dark pill with a gold dot (the picture has room for its shadow)."""
+        k = self.s * 2
+        font = pil_font(13 * k, 600)
+        h = 32
+        w = text_width(text, font) / k + 48
+        img = self.canvas(w + 24, h + 20)
+        box = (12 * k, 6 * k, (12 + w) * k, (6 + h) * k)
+        self.soft_shadow(img, box, h / 2 * k, 6, 120, offset=(0, 3))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle(box, h / 2 * k, fill=rgba('#1d242d'), outline=rgba(LINE2), width=max(1, round(k)))
+        cy = (6 + h / 2) * k
+        d.ellipse(((12 + 16) * k, cy - 4 * k, (12 + 24) * k, cy + 4 * k), fill=rgba(ACCENT))
+        text_in(d, (12 + 34) * k, 6 * k, h * k, text, font, rgba(TEXT))
         return self.done(img)
 
     def background(self, width, height):
@@ -702,15 +779,15 @@ class Painter:
             scale = max(w / pic.width, h / pic.height)
             return pic.resize((math.ceil(pic.width * scale), math.ceil(pic.height * scale)), Image.LANCZOS)
         except OSError:
-            img = Image.new('RGB', (w, h), '#67a28f')
+            img = Image.new('RGB', (w, h), '#2a3a44')
             d = ImageDraw.Draw(img)
             for y in range(h):
                 f = y / h
-                d.line([(0, y), (w, y)], fill=(int(103 + 70 * f), int(162 - 20 * f), int(143 - 50 * f)))
+                d.line([(0, y), (w, y)], fill=(int(42 + 30 * f), int(58 - 20 * f), int(68 - 30 * f)))
             return img
 
     def overlay(self):
-        return Image.new('RGBA', (self.px(W), self.px(H)), (10, 16, 15, 153))
+        return Image.new('RGBA', (self.px(W), self.px(H)), (4, 7, 10, 150))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -812,7 +889,7 @@ class Toggle:
     def __init__(self, app, parent, value, on_change):
         self.app, self.value, self.on_change = app, bool(value), on_change
         self.images = [ImageTk.PhotoImage(app.paint.toggle(False)), ImageTk.PhotoImage(app.paint.toggle(True))]
-        self.widget = app.tk.Label(parent, bd=0, bg=PAPER, cursor='hand2', image=self.images[self.value])
+        self.widget = app.tk.Label(parent, bd=0, bg=CARD, cursor='hand2', image=self.images[self.value])
         self.widget.bind('<Button-1>', self.flip)
 
     def flip(self, _event=None):
@@ -822,18 +899,18 @@ class Toggle:
 
 
 class Segments:
-    """A row of pill buttons, one chosen."""
+    """A row of options, one chosen."""
 
     def __init__(self, app, parent, options, value, on_change):
         self.app, self.options, self.value, self.on_change = app, options, value, on_change
-        self.widget = app.tk.Frame(parent, bg=PAPER)
+        self.widget = app.tk.Frame(parent, bg=CARD)
         self.labels = []
         for key, text in options:
             images = (ImageTk.PhotoImage(app.paint.pill(t(text), False)), ImageTk.PhotoImage(app.paint.pill(t(text), True)))
-            label = app.tk.Label(self.widget, bd=0, bg=PAPER, cursor='hand2')
+            label = app.tk.Label(self.widget, bd=0, bg=CARD, cursor='hand2')
             label.images = images
             label.bind('<Button-1>', lambda e, k=key: self.choose(k))
-            label.pack(side='left', padx=(0, app.px(4)))
+            label.pack(side='left', padx=(0, app.px(6)))
             self.labels.append((key, label))
         self.refresh()
 
@@ -853,9 +930,9 @@ class Select:
     def __init__(self, app, parent, options, names, value, on_change, width):
         self.app, self.options, self.names, self.on_change, self.width = app, options, names, on_change, width
         self.index = next((i for i, (key, _t) in enumerate(options) if key == value), 0)
-        self.widget = app.tk.Label(parent, bd=0, bg=PAPER, cursor='hand2')
-        self.menu = app.tk.Menu(self.widget, tearoff=False, font=app.font(14, 'normal', 'Cabin'), bg='#ffffff', fg=TX,
-                                activebackground=BL, activeforeground=PAPER, bd=0, relief='flat')
+        self.widget = app.tk.Label(parent, bd=0, bg=CARD, cursor='hand2')
+        self.menu = app.tk.Menu(self.widget, tearoff=False, font=app.font(13.5), bg=FIELD, fg=TEXT,
+                                activebackground=ACCENT, activeforeground=ON_ACCENT, bd=0, relief='flat')
         for i, name in enumerate(names):
             self.menu.add_command(label=name, command=lambda i=i: self.choose(i))
         self.widget.bind('<Enter>', lambda e: self.render(True))
@@ -869,7 +946,7 @@ class Select:
 
     def open(self, _event=None):
         w = self.widget
-        self.menu.tk_popup(w.winfo_rootx(), w.winfo_rooty() + w.winfo_height())
+        self.menu.tk_popup(w.winfo_rootx(), w.winfo_rooty() + w.winfo_height() + self.app.px(2))
 
     def choose(self, index):
         self.index = index
@@ -878,14 +955,15 @@ class Select:
 
 
 class RoundEntry:
-    """A text field with rounded corners: an Entry inside a drawn white frame that follows its width."""
+    """A text field with rounded corners: an Entry inside a drawn frame that follows its width."""
 
     def __init__(self, app, parent, var):
         self.app = app
-        self.widget = app.tk.Canvas(parent, width=app.px(60), height=app.px(38), bg=PAPER, highlightthickness=0, bd=0)
-        self.entry = app.tk.Entry(self.widget, textvariable=var, font=app.font(14, 'normal', 'Cabin SemiBold'),
-                                  bg='#ffffff', fg=TX, relief='flat', bd=0, highlightthickness=0, insertbackground=INK)
-        self.window = self.widget.create_window(app.px(12), app.px(19), anchor='w', window=self.entry)
+        self.widget = app.tk.Canvas(parent, width=app.px(60), height=app.px(34), bg=CARD, highlightthickness=0, bd=0)
+        self.entry = app.tk.Entry(self.widget, textvariable=var, font=app.font(13.5), bg=FIELD, fg=TEXT,
+                                  relief='flat', bd=0, highlightthickness=0, insertbackground=TEXT,
+                                  selectbackground=ACCENT, selectforeground=ON_ACCENT)
+        self.window = self.widget.create_window(app.px(12), app.px(17), anchor='w', window=self.entry)
         self.frame = self.widget.create_image(0, 0, anchor='nw')
         self.widget.tag_lower(self.frame)
         self.widget.bind('<Configure>', self.layout)
@@ -898,13 +976,13 @@ class RoundEntry:
 
 
 class Slider:
-    """A pill track with a teal fill and an ink knob (Tk's Scale draws native blocks on Windows)."""
+    """A thin track with a gold fill and a white knob (Tk's Scale draws native blocks on Windows)."""
 
     def __init__(self, app, parent, low, high, step, value, on_change, width=220):
         self.app, self.low, self.high, self.step, self.on_change = app, low, high, step, on_change
         self.value = value
         self.w, self.h = app.px(width), app.px(26)
-        self.widget = app.tk.Canvas(parent, width=self.w, height=self.h, bg=PAPER, highlightthickness=0, bd=0,
+        self.widget = app.tk.Canvas(parent, width=self.w, height=self.h, bg=CARD, highlightthickness=0, bd=0,
                                     cursor='hand2')
         for sequence in ('<Button-1>', '<B1-Motion>'):
             self.widget.bind(sequence, self.pick)
@@ -913,16 +991,15 @@ class Slider:
     def draw(self):
         c, px = self.widget, self.app.px
         c.delete('all')
-        r, y, pad = px(5), self.h / 2, px(12)
+        r, y, pad = px(2), self.h / 2, px(10)
         frac = (self.value - self.low) / (self.high - self.low)
         x = pad + frac * (self.w - 2 * pad)
-        c.create_rectangle(pad, y - r, self.w - pad, y + r, fill=PAPER2, outline=INK, width=px(2))
-        c.create_rectangle(pad, y - r, x, y + r, fill=BL, outline=INK, width=px(2))
-        c.create_oval(x - px(10), y - px(10), x + px(10), y + px(10), fill=INK, outline=INK)
-        c.create_oval(x - px(4), y - px(4), x + px(4), y + px(4), fill=PAPER, outline='')
+        c.create_rectangle(pad, y - r, self.w - pad, y + r, fill='#3a4451', outline='')
+        c.create_rectangle(pad, y - r, x, y + r, fill=ACCENT, outline='')
+        c.create_oval(x - px(8), y - px(8), x + px(8), y + px(8), fill='#ffffff', outline=ACCENT, width=px(2))
 
     def pick(self, event):
-        pad = self.app.px(12)
+        pad = self.app.px(10)
         frac = min(1.0, max(0.0, (event.x - pad) / max(1, self.w - 2 * pad)))
         value = round((self.low + frac * (self.high - self.low)) / self.step) * self.step
         value = round(min(self.high, max(self.low, value)), 3)
@@ -933,12 +1010,12 @@ class Slider:
 
 
 class InkScrollbar:
-    """An ink thumb on a cream track (the mock-up's scrollbar)."""
+    """A thin rounded thumb, no track."""
 
     def __init__(self, app, parent, command):
         self.app, self.command = app, command
         self.first, self.last = 0.0, 1.0
-        self.widget = app.tk.Canvas(parent, width=app.px(9), bg=PAPER, highlightthickness=0, bd=0)
+        self.widget = app.tk.Canvas(parent, width=app.px(6), bg=CARD, highlightthickness=0, bd=0)
         self.widget.bind('<Configure>', lambda e: self.draw())
         self.widget.bind('<Button-1>', self.drag)
         self.widget.bind('<B1-Motion>', self.drag)
@@ -954,13 +1031,11 @@ class InkScrollbar:
         if h < 4 or self.last - self.first >= 1.0:
             return
         r = w / 2
-        c.create_rectangle(0, r, w, h - r, fill=PAPER2, outline=PAPER2)
-        c.create_oval(0, 0, w, w, fill=PAPER2, outline=PAPER2)
-        c.create_oval(0, h - w, w, h, fill=PAPER2, outline=PAPER2)
-        y0, y1 = self.first * h, max(self.first * h + w, self.last * h)
-        c.create_rectangle(0, y0 + r, w, y1 - r, fill=INK, outline=INK)
-        c.create_oval(0, y0, w, y0 + w, fill=INK, outline=INK)
-        c.create_oval(0, y1 - w, w, y1, fill=INK, outline=INK)
+        y0, y1 = self.first * h, max(self.first * h + w * 3, self.last * h)
+        color = '#3c4652'
+        c.create_rectangle(0, y0 + r, w, y1 - r, fill=color, outline=color)
+        c.create_oval(0, y0, w, y0 + w, fill=color, outline=color)
+        c.create_oval(0, y1 - w, w, y1, fill=color, outline=color)
 
     def drag(self, event):
         h = max(1, self.widget.winfo_height())
@@ -969,17 +1044,25 @@ class InkScrollbar:
 
 
 class DashLine:
+    """A hairline rule between rows."""
+
     def __init__(self, app, parent):
-        self.widget = app.tk.Canvas(parent, height=1, bg=PAPER, highlightthickness=0, bd=0)
-        self.widget.bind('<Configure>', lambda e: (self.widget.delete('all'), self.widget.create_line(
-            0, 0, e.width, 0, fill=DASH, dash=(3, 3))))
+        self.widget = app.tk.Frame(parent, height=1, bg=LINE)
 
 
 # ---------------------------------------------------------------------------------------------
 # The window.
 
 NAV = [('game', 'Game'), ('video', 'Video'), ('controls', 'Controls'), ('advanced', 'Advanced'), ('log', 'Log & diagnostics')]
-PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 290, 100, 552, 508
+NAV_ICONS = {'game': 'folder', 'video': 'monitor', 'controls': 'gamepad', 'advanced': 'sliders', 'log': 'terminal'}
+# The layout (design units). Sidebar: brand, menu, status, play button, version. The pages' card,
+# dialogs and notices stay right of the sidebar, so nothing ever covers the menu.
+BRAND_X, BRAND_Y = 22, 26
+NAV_X, NAV_Y, NAV_W, NAV_H, NAV_GAP = 12, 104, 248, 44, 4
+STATUS_X, STATUS_Y, STATUS_W = 28, 468, 220
+PLAY_X, PLAY_Y, PLAY_W, PLAY_H = 24, 574, 224, 54
+PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 296, 52, 800, 624
+CONTENT_CX = (SIDEBAR_W + W) / 2
 
 
 class LauncherWindow:
@@ -996,7 +1079,6 @@ class LauncherWindow:
         self.update_checking = False
         self.page = None
         self.capture = None   # (button, chip) while waiting for a key
-        self.lifted = []      # the interface is up (gravity shift): hover and levitation pause
         self.register_font()
         # Windows' timer ticks every 15.6 ms by default: Tk's after() then lands unevenly and the
         # animations stutter. 1 ms while the launcher is open (released when it closes).
@@ -1024,7 +1106,7 @@ class LauncherWindow:
     def px(self, v):
         return max(1, round(v * self.s))
 
-    def font(self, size, weight='normal', family='Cabin'):
+    def font(self, size, weight='normal', family=UI_FONT):
         return (family, -self.px(size), weight)
 
     def register_font(self):
@@ -1094,53 +1176,49 @@ class LauncherWindow:
     def build_scene(self):
         cv, paint = self.cv, self.paint
         self.photos = {}
-        # Background, 18 px larger on every side for the parallax.
+        # Background, 18 px larger on every side (it shifts a little when a page opens).
         self.bg_image = ImageTk.PhotoImage(paint.background(W + 36, H + 36))
         self.bg_excess = self.bg_image.width() / self.s - (W + 36)
-        self.bg_pos = .5          # background-position: 50 % (home), 25 % (a page is open)
-        self.par = [0.0, 0.0, 0.0, 0.0]   # current x, y and target x, y
+        self.bg_pos = .5          # background-position: 50 % (home), 35 % (a page is open)
+        self.par = [0.0, 0.0, 0.0, 0.0]
         self.bg = cv.create_image(0, 0, anchor='nw', image=self.bg_image)
         self.place_background()
-        # Title bar: the port's icon (the black cat) on the left, window buttons on a dark pill.
-        try:
-            size = self.px(28)
-            self.photos['bar'] = ImageTk.PhotoImage(
-                Image.open(HERE / 'gravityrush.png').convert('RGBA').resize((size, size), Image.LANCZOS))
-            cv.create_image(self.px(14), self.px(20), anchor='w', image=self.photos['bar'])
-        except OSError:
-            pass
+        # A shade at the top of the picture, the sidebar's glass, the window buttons.
+        self.photos['scrim'] = ImageTk.PhotoImage(paint.scrim(W - SIDEBAR_W, 96))
+        cv.create_image(self.px(SIDEBAR_W), 0, anchor='nw', image=self.photos['scrim'])
+        self.photos['sidebar'] = ImageTk.PhotoImage(paint.sidebar(H))
+        self.sidebar = cv.create_image(0, 0, anchor='nw', image=self.photos['sidebar'])
+        self.drag_area = cv.create_rectangle(0, 0, self.px(W - 92), self.px(40), fill='', outline='')
+        cv.tag_bind(self.drag_area, '<ButtonPress-1>', self.drag_start)
+        cv.tag_bind(self.drag_area, '<B1-Motion>', self.drag_move)
         self.win_images = [ImageTk.PhotoImage(paint.window_buttons(i)) for i in (None, 0, 1)]
-        self.win = cv.create_image(self.px(W - 8), self.px(4), anchor='ne', image=self.win_images[0])
+        self.win = cv.create_image(self.px(W), 0, anchor='ne', image=self.win_images[0])
         cv.tag_bind(self.win, '<Motion>', self.window_hover)
         cv.tag_bind(self.win, '<Leave>', lambda e: cv.itemconfigure(self.win, image=self.win_images[0]))
         cv.tag_bind(self.win, '<Button-1>', self.window_click)
-        self.drag_area = cv.create_rectangle(0, 0, self.px(W - 100), self.px(40), fill='', outline='')
-        cv.tag_bind(self.drag_area, '<ButtonPress-1>', self.drag_start)
-        cv.tag_bind(self.drag_area, '<B1-Motion>', self.drag_move)
-        # Brand.
-        self.brand_images = {1.0: ImageTk.PhotoImage(paint.brand(1.0)), .46: ImageTk.PhotoImage(paint.brand(.46))}
-        self.brand_scale = 1.0
-        self.brand = cv.create_image(self.px(56), self.px(62), anchor='nw', image=self.brand_images[1.0])
-        self.brand_y = 62.0
-        # Menu.
+        # Brand: the port's icon and the wordmark.
+        try:
+            icon = Image.open(HERE / 'gravityrush.png').convert('RGBA')
+        except OSError:
+            icon = None
+        self.photos['brand'] = ImageTk.PhotoImage(paint.brand(icon))
+        self.brand = cv.create_image(self.px(BRAND_X), self.px(BRAND_Y), anchor='nw', image=self.photos['brand'])
+        cv.tag_bind(self.brand, '<Button-1>', lambda e: self.modal_items or self.open_page(None))
+        # Menu, status, play button, version.
         self.nav_items = {}
         self.nav_hover = None
         self.render_nav()
-        # Status pills and version.
         self.status_items = []
         self.refresh_status()
-        self.photos['ver'] = ImageTk.PhotoImage(paint.label(t('VERSION {}').format(self.logic.VERSION), 12, PAPER,
-                                                            spacing=.3, shadow=INK))
-        self.ver = cv.create_image(self.px(W / 2), self.px(H - 38), anchor='center', image=self.photos['ver'])
-        # Panel (hidden until a page opens), modal and toast.
+        self.play = None
+        self.render_play()
+        self.ver = cv.create_text(self.px(SIDEBAR_W / 2), self.px(H - 24), text=t('Version {}').format(self.logic.VERSION),
+                                  fill=TEXT3, font=self.font(11.5))
+        # Card (hidden until a page opens), dialog and notice.
         self.panel_items = []
         self.modal_items = []
         self.toast_items = []
         self.drop_in()
-
-    def diamond(self, cx, cy, r):
-        return [self.px(cx), self.px(cy - r), self.px(cx + r), self.px(cy), self.px(cx), self.px(cy + r),
-                self.px(cx - r), self.px(cy)]
 
     def place_background(self):
         x = -18 + -self.bg_excess * self.bg_pos + self.par[0]
@@ -1148,11 +1226,11 @@ class LauncherWindow:
         self.cv.coords(self.bg, self.px(x) if x >= 0 else -self.px(-x), self.px(y) if y >= 0 else -self.px(-y))
 
     def window_hover(self, event):
-        part = 0 if event.x < self.px(W - 8 - 44) else 1
+        part = 0 if event.x < self.px(W - 46) else 1
         self.cv.itemconfigure(self.win, image=self.win_images[1 + part])
 
     def window_click(self, event):
-        if event.x < self.px(W - 8 - 44):
+        if event.x < self.px(W - 46):
             self.minimize()
         else:
             self.ask_quit()
@@ -1164,119 +1242,122 @@ class LauncherWindow:
         self.root.geometry(f'+{event.x_root - self.drag[0]}+{event.y_root - self.drag[1]}')
 
     # ---- menu ------------------------------------------------------------------------------
-    def nav_entries(self):
-        return [('go', t('Play'), 52)] + [(key, t(text), 40) for key, text in NAV] + [('quit', t('Quit'), 40)]
-
     def render_nav(self):
-        """The capsules for the current state (wide at home, narrow with a page open)."""
-        small = self.page is not None
-        width = 206 if small else 300
-        y = 190
-        for index, (key, label, height) in enumerate(self.nav_entries()):
-            go = key == 'go'
-            looks = ('go', 'go_hover') if go else ('normal', 'hover', 'on')
-            images = {look: ImageTk.PhotoImage(self.paint.nav_button(width, height, label, look, small, go)) for look in looks}
+        """The menu entries (in the current language)."""
+        y = NAV_Y
+        for index, (key, label) in enumerate(NAV):
+            images = {look: ImageTk.PhotoImage(self.paint.nav_item(t(label), NAV_ICONS[key], look))
+                      for look in ('normal', 'hover', 'on')}
             item = self.nav_items.get(key)
             if item:
                 item['images'] = images
-                item['y'] = y
                 self.cv.itemconfigure(item['id'], image=self.nav_image(key))
             else:
-                item_id = self.cv.create_image(self.px(56), self.px(y), anchor='nw', image=images[looks[0]])
-                item = self.nav_items[key] = {'id': item_id, 'images': images, 'y': y, 'x': 56.0, 'index': index}
+                item_id = self.cv.create_image(self.px(NAV_X), self.px(y), anchor='nw', image=images['normal'])
+                self.nav_items[key] = {'id': item_id, 'images': images, 'y': y, 'x': NAV_X, 'index': index}
                 self.cv.tag_bind(item_id, '<Enter>', lambda e, k=key: self.nav_enter(k))
                 self.cv.tag_bind(item_id, '<Leave>', lambda e, k=key: self.nav_leave(k))
                 self.cv.tag_bind(item_id, '<Button-1>', lambda e, k=key: self.nav_click(k))
-            y += height + 8
+            y += NAV_H + NAV_GAP
 
     def nav_image(self, key):
         item = self.nav_items[key]
-        if key == 'go':
-            return item['images']['go_hover' if self.nav_hover == key else 'go']
         if key == self.page:
             return item['images']['on']
         return item['images']['hover' if self.nav_hover == key else 'normal']
 
-    def nav_move(self, key, x):
-        item = self.nav_items[key]
-        item['x'] = x
-        self.cv.coords(item['id'], self.px(x), self.px(item['y']))
-
     def nav_enter(self, key):
-        if self.lifted:
-            return
         self.nav_hover = key
         self.cv.itemconfigure(self.nav_items[key]['id'], image=self.nav_image(key))
-        start = self.nav_items[key]['x']
-        self.anim.add(200, lambda v: self.nav_move(key, start + (66 - start) * v), ease_out_back)
+        self.cv.configure(cursor='hand2')
 
     def nav_leave(self, key):
-        if self.lifted:
-            return
         if self.nav_hover == key:
             self.nav_hover = None
         self.cv.itemconfigure(self.nav_items[key]['id'], image=self.nav_image(key))
-        start = self.nav_items[key]['x']
-        self.anim.add(200, lambda v: self.nav_move(key, start + (56 - start) * v), ease_out)
+        self.cv.configure(cursor='')
 
     def nav_click(self, key):
         if self.modal_items:
             return 'break'
-        if key == 'go':
-            self.launch()
-        elif key == 'quit':
-            self.ask_quit()
-        else:
-            self.open_page(None if key == self.page else key)
+        self.open_page(None if key == self.page else key)
         return 'break'
 
-    def drop_in(self):
-        """Menu entrance: every capsule falls in with a bounce, 70 ms apart."""
-        for key, item in self.nav_items.items():
-            target = item['y']
+    def render_play(self):
+        """The play button (in the current language)."""
+        cv = self.cv
+        self.play_looks = {look: ImageTk.PhotoImage(self.paint.play_button(t('Play').upper(), look))
+                           for look in ('normal', 'hover', 'press')}
+        if self.play:
+            cv.itemconfigure(self.play, image=self.play_looks['normal'])
+            return
+        self.play = cv.create_image(self.px(PLAY_X - 8), self.px(PLAY_Y - 4), anchor='nw', image=self.play_looks['normal'])
 
-            def update(v, key=key, target=target):
-                item = self.nav_items[key]
-                self.cv.coords(item['id'], self.px(item['x']), self.px(target - 130 * (1 - v)))
+        def look(name, cursor):
+            cv.itemconfigure(self.play, image=self.play_looks[name])
+            cv.configure(cursor=cursor)
+        cv.tag_bind(self.play, '<Enter>', lambda e: look('hover', 'hand2'))
+        cv.tag_bind(self.play, '<Leave>', lambda e: look('normal', ''))
+        cv.tag_bind(self.play, '<ButtonPress-1>', lambda e: look('press', 'hand2'))
+        cv.tag_bind(self.play, '<ButtonRelease-1>', self.play_release)
+
+    def play_release(self, event):
+        inside = self.px(PLAY_X) <= event.x <= self.px(PLAY_X + PLAY_W) and \
+            self.px(PLAY_Y) <= event.y <= self.px(PLAY_Y + PLAY_H)
+        self.cv.itemconfigure(self.play, image=self.play_looks['hover' if inside else 'normal'])
+        if inside and not self.modal_items:
+            self.launch()
+
+    def drop_in(self):
+        """Entrance: the menu slides in from the left, 30 ms apart; the play button rises."""
+        for key, item in self.nav_items.items():
+            def update(v, item=item):
+                self.cv.coords(item['id'], self.px(item['x'] - 14 * (1 - v)), self.px(item['y']))
             update(0.0)
-            self.anim.add(750, update, ease_out_back, delay_ms=120 + item['index'] * 70)
+            self.anim.add(320, update, ease_out, delay_ms=60 + item['index'] * 30)
+
+        def rise(v):
+            self.cv.coords(self.play, self.px(PLAY_X - 8), self.px(PLAY_Y - 4 + 12 * (1 - v)))
+        rise(0.0)
+        self.anim.add(360, rise, ease_out, delay_ms=220)
 
     # ---- status ----------------------------------------------------------------------------
     def refresh_status(self):
+        """The sidebar's status lines: the game folder, the newest save, the display settings."""
         for item in self.status_items:
             self.cv.delete(item)
         self.status_items = []
         found = self.logic.game_info(self.app['game_dir'])
-        left = [(t('Game found · all ready'), 'ok') if found else (t('Choose the game folder'), 'warn')]
         saves = self.user_dir() / 'savedata'
         newest = 0.0
         if saves.is_dir():
             for path in saves.rglob('*'):
                 if path.is_file() and path.suffix not in ('.png',):
                     newest = max(newest, path.stat().st_mtime)
-        left.append((t('Last save · {}').format(time.strftime('%d/%m %H:%M', time.localtime(newest))) if newest
-                     else t('No saves yet'), 'cube'))
         mode = dict(WINDOW_MODES).get(self.ini.get('display_mode', 'borderless'), 'Borderless')
         fps = self.ini.get('fps_limit', '0')
-        right = [(t(mode) + (' · ' + t('VSync') if self.ini.get('vsync', '1') == '1' else ''), 'cube'),
-                 ((t('Limit {} FPS').format(fps) if fps not in ('', '0') else t('Unlimited FPS')), 'cube')]
+        display = t(mode) + (' · ' + t('VSync') if self.ini.get('vsync', '1') == '1' else '') + ' · ' + \
+            (f'{fps} FPS' if fps not in ('', '0') else t('Unlimited FPS'))
+        rows = [(t('Game found · all ready'), 'check', OK_C) if found else (t('Choose the game folder'), 'alert', WARN_C),
+                (t('Last save · {}').format(time.strftime('%d/%m %H:%M', time.localtime(newest))) if newest
+                 else t('No saves yet'), 'clock', TEXT3),
+                (display, 'monitor', TEXT3)]
         self.status_photos = []
-        for column, rows in (('l', left), ('r', right)):
-            y = H - 26 - 30 * len(rows) - 7 * (len(rows) - 1)
-            for text, icon in rows:
-                photo = ImageTk.PhotoImage(self.paint.status(text, icon))
-                self.status_photos.append(photo)
-                if column == 'l':
-                    item = self.cv.create_image(self.px(56), self.px(y), anchor='nw', image=photo)
-                else:
-                    item = self.cv.create_image(self.px(W - 56), self.px(y), anchor='ne', image=photo)
-                self.status_items.append(item)
-                y += 37
+        y = STATUS_Y
+        for index, (text, icon, color) in enumerate(rows):
+            photo = ImageTk.PhotoImage(self.paint.status_line(text, icon, color, STATUS_W))
+            self.status_photos.append(photo)
+            item = self.cv.create_image(self.px(STATUS_X), self.px(y), anchor='nw', image=photo)
+            if index == 0 and not found:  # opens the page where the folder is chosen
+                self.cv.tag_bind(item, '<Button-1>', lambda e: self.modal_items or self.open_page('game'))
+            self.status_items.append(item)
+            y += 28
 
     # ---- pages -----------------------------------------------------------------------------
     def click_background(self, event):
         hit = self.cv.find_overlapping(event.x, event.y, event.x, event.y)
-        ours = {i['id'] for i in self.nav_items.values()} | set(self.panel_items) | set(self.modal_items) | {self.win, self.drag_area}
+        ours = {i['id'] for i in self.nav_items.values()} | set(self.panel_items) | set(self.modal_items) | \
+            set(self.status_items) | {self.win, self.drag_area, self.sidebar, self.play, self.brand}
         if self.page and not (set(hit) & ours):
             self.open_page(None)
 
@@ -1290,8 +1371,7 @@ class LauncherWindow:
             self.open_page(None)
 
     def open_page(self, key):
-        """Opens (or closes, None) a page: narrower menu, smaller title, panel from the right."""
-        was_open = self.page is not None
+        """Opens (or closes, None) a page in the card right of the sidebar."""
         self.page = key
         self.capture = None
         for item in self.panel_items:
@@ -1300,55 +1380,60 @@ class LauncherWindow:
         if hasattr(self, 'panel_frame'):
             self.panel_frame.destroy()
             del self.panel_frame
-        if (key is not None) != was_open:
-            self.render_nav()
-            self.brand_scale = .46 if key else 1.0
-            self.cv.itemconfigure(self.brand, image=self.brand_images[self.brand_scale])
-            start, end = self.bg_pos, .25 if key else .5
-            self.anim.add(900, lambda v: (setattr(self, 'bg_pos', start + (end - start) * v), self.place_background()), ease_out)
         for k, item in self.nav_items.items():
             self.cv.itemconfigure(item['id'], image=self.nav_image(k))
+        start, end = self.bg_pos, .35 if key else .5
+        if start != end:
+            self.anim.add(700, lambda v: (setattr(self, 'bg_pos', start + (end - start) * v), self.place_background()),
+                          ease_out)
         if key:
             self.build_panel(key)
 
     def build_panel(self, key):
         tk, cv = self.tk, self.cv
         titles = dict(NAV)
-        frame_photo = ImageTk.PhotoImage(self.paint.panel(PANEL_W, PANEL_H, t(titles[key])))
-        self.photos['panel'] = frame_photo
-        shell = cv.create_image(self.px(PANEL_X), self.px(PANEL_Y - 24), anchor='nw', image=frame_photo)
-        inner_w, inner_h = PANEL_W - 6 - 56, PANEL_H - 6 - 34 - 20
-        frame = self.panel_frame = tk.Frame(cv, bg=PAPER, width=self.px(inner_w), height=self.px(inner_h))
+        self.photos['panel'] = ImageTk.PhotoImage(self.paint.panel(PANEL_W, PANEL_H, t(titles[key])))
+        shell = cv.create_image(self.px(PANEL_X - 28), self.px(PANEL_Y - 28), anchor='nw', image=self.photos['panel'])
+        self.photos['close'] = [ImageTk.PhotoImage(self.paint.icon_button('x', hover)) for hover in (False, True)]
+        close = cv.create_image(self.px(PANEL_X + PANEL_W - 30), self.px(PANEL_Y + 32), anchor='center',
+                                image=self.photos['close'][0])
+        cv.tag_bind(close, '<Enter>', lambda e: cv.itemconfigure(close, image=self.photos['close'][1]))
+        cv.tag_bind(close, '<Leave>', lambda e: cv.itemconfigure(close, image=self.photos['close'][0]))
+        cv.tag_bind(close, '<Button-1>', lambda e: self.modal_items or self.open_page(None))
+        inner_w, inner_h = PANEL_W - 56, PANEL_H - 76 - 20
+        frame = self.panel_frame = tk.Frame(cv, bg=CARD, width=self.px(inner_w), height=self.px(inner_h))
         frame.pack_propagate(False)
-        window = cv.create_window(self.px(PANEL_X + 3 + 28), self.px(PANEL_Y + 3 + 34), anchor='nw', window=frame,
+        window = cv.create_window(self.px(PANEL_X + 28), self.px(PANEL_Y + 76), anchor='nw', window=frame,
                                   state='hidden')
-        self.panel_items = [shell, window]
+        self.panel_items = [shell, close, window]
         # Scrolling body and the footer.
-        foot = tk.Frame(frame, bg=PAPER)
-        foot.pack(side='bottom', fill='x', pady=(self.px(10), 0))
-        holder = tk.Frame(frame, bg=PAPER)
+        foot = tk.Frame(frame, bg=CARD)
+        foot.pack(side='bottom', fill='x')
+        holder = tk.Frame(frame, bg=CARD)
         holder.pack(side='top', fill='both', expand=True)
-        body_cv = tk.Canvas(holder, bg=PAPER, highlightthickness=0, bd=0)
+        body_cv = tk.Canvas(holder, bg=CARD, highlightthickness=0, bd=0)
         bar = InkScrollbar(self, holder, body_cv.yview)
-        body = tk.Frame(body_cv, bg=PAPER)
+        body = tk.Frame(body_cv, bg=CARD)
         body_window = body_cv.create_window(0, 0, anchor='nw', window=body)
         body.bind('<Configure>', lambda e: body_cv.configure(scrollregion=body_cv.bbox('all')))
         body_cv.bind('<Configure>', lambda e: body_cv.itemconfigure(body_window, width=e.width))
         body_cv.configure(yscrollcommand=bar.set)
-        body_cv.pack(side='left', fill='both', expand=True, padx=(0, self.px(10)))
+        body_cv.pack(side='left', fill='both', expand=True, padx=(0, self.px(12)))
         bar.widget.pack(side='right', fill='y')
         self.body_canvas = body_cv
         getattr(self, f'page_{key}')(body, foot)
-        # Entrance: the frame (one picture) slides in from the right with a small overshoot; the
-        # controls, slow to move in Tk, appear when it lands.
+        # Entrance: the card (one picture) rises a little; the controls, slow to move in Tk,
+        # appear when it is in place.
         def update(v):
-            cv.coords(shell, self.px(PANEL_X + 60 * (1 - v)), self.px(PANEL_Y - 24))
+            dy = 14 * (1 - v)
+            cv.coords(shell, self.px(PANEL_X - 28), self.px(PANEL_Y - 28 + dy))
+            cv.coords(close, self.px(PANEL_X + PANEL_W - 30), self.px(PANEL_Y + 32 + dy))
 
         def landed():
             if window in self.panel_items:
                 cv.itemconfigure(window, state='normal')
         update(0.0)
-        self.anim.add(320, update, ease_out_back, done=landed)
+        self.anim.add(220, update, ease_out, done=landed)
 
     def wheel(self, event):
         if self.page and hasattr(self, 'body_canvas'):
@@ -1359,38 +1444,36 @@ class LauncherWindow:
 
     # ---- page building blocks ----------------------------------------------------------------
     def sec(self, parent, title, first=False):
-        holder = self.tk.Frame(parent, bg=PAPER)
-        holder.pack(fill='x', pady=(self.px(4 if first else 20), self.px(4)))
+        holder = self.tk.Frame(parent, bg=CARD)
+        holder.pack(fill='x', pady=(self.px(2 if first else 24), self.px(2)))
         photo = ImageTk.PhotoImage(self.paint.section(t(title)))
-        label = self.tk.Label(holder, image=photo, bg=PAPER, bd=0)
+        label = self.tk.Label(holder, image=photo, bg=CARD, bd=0)
         label.image = photo
-        label.pack(anchor='w', pady=(0, self.px(5)))
-        self.tk.Frame(holder, bg=INK, height=self.px(3)).pack(fill='x')
+        label.pack(anchor='w', pady=(0, self.px(2)))
 
     def row(self, parent, title, make, hint=None, wide=False):
         tk = self.tk
-        line = tk.Frame(parent, bg=PAPER)
+        line = tk.Frame(parent, bg=CARD)
         line.pack(fill='x')
-        inner = tk.Frame(line, bg=PAPER, height=self.px(46))
+        inner = tk.Frame(line, bg=CARD, height=self.px(48))
         inner.pack(fill='x')
-        label = tk.Label(inner, text=t(title), bg=PAPER, fg=SD, font=self.font(15.5, 'normal', 'Cabin SemiBold'),
-                         anchor='w', width=0, justify='left', wraplength=self.px(200))
+        label = tk.Label(inner, text=t(title), bg=CARD, fg=TEXT, font=self.font(14), anchor='w', width=0,
+                         justify='left', wraplength=self.px(320))
         label.pack(side='left', fill='y', pady=self.px(8))
-        control = tk.Frame(inner, bg=PAPER)
-        control.pack(side='right', fill='x' if wide else None, expand=bool(wide), pady=self.px(6))
+        control = tk.Frame(inner, bg=CARD)
+        control.pack(side='right', fill='x' if wide else None, expand=bool(wide), pady=self.px(7))
         make(control)
         if hint:
-            tk.Label(line, text=t(hint), bg=PAPER, fg=MU, font=self.font(13), anchor='w', justify='left',
-                     wraplength=self.px(PANEL_W - 110)).pack(fill='x', pady=(0, self.px(8)))
+            tk.Label(line, text=t(hint), bg=CARD, fg=TEXT2, font=self.font(12.5), anchor='w', justify='left',
+                     wraplength=self.px(PANEL_W - 120)).pack(fill='x', pady=(0, self.px(10)))
         DashLine(self, line).widget.pack(fill='x')
 
     def folder_row(self, parent, title, key, hint):
         tk = self.tk
-        line = tk.Frame(parent, bg=PAPER)
-        line.pack(fill='x', pady=(self.px(8), 0))
-        tk.Label(line, text=t(title), bg=PAPER, fg=SD, font=self.font(15.5, 'normal', 'Cabin SemiBold'),
-                 anchor='w').pack(fill='x', pady=(0, self.px(6)))
-        fields = tk.Frame(line, bg=PAPER)
+        line = tk.Frame(parent, bg=CARD)
+        line.pack(fill='x', pady=(self.px(10), 0))
+        tk.Label(line, text=t(title), bg=CARD, fg=TEXT, font=self.font(14), anchor='w').pack(fill='x', pady=(0, self.px(6)))
+        fields = tk.Frame(line, bg=CARD)
         fields.pack(fill='x')
         var = tk.StringVar(value=self.app.get(key, ''))
         RoundEntry(self, fields, var).widget.pack(side='left', fill='x', expand=True)
@@ -1408,8 +1491,8 @@ class LauncherWindow:
         ImageButton(self, fields, t('Browse…'), browse).widget.pack(side='left', padx=(self.px(8), 0))
         ImageButton(self, fields, t('Open'), lambda: self.open_path(var.get(), key)).widget.pack(side='left', padx=(self.px(8), 0))
         if hint:
-            tk.Label(line, text=t(hint), bg=PAPER, fg=MU, font=self.font(13), anchor='w', justify='left',
-                     wraplength=self.px(PANEL_W - 110)).pack(fill='x', pady=(self.px(6), self.px(8)))
+            tk.Label(line, text=t(hint), bg=CARD, fg=TEXT2, font=self.font(12.5), anchor='w', justify='left',
+                     wraplength=self.px(PANEL_W - 120)).pack(fill='x', pady=(self.px(6), self.px(10)))
         DashLine(self, line).widget.pack(fill='x')
 
     def toggle_row(self, parent, title, value, on_change, hint=None):
@@ -1421,18 +1504,22 @@ class LauncherWindow:
         return Select(self, parent, options, names, value, on_change, 24 + width * 11).widget
 
     def buttons(self, parent, entries):
-        holder = self.tk.Frame(parent, bg=PAPER)
+        holder = self.tk.Frame(parent, bg=CARD)
         holder.pack(fill='x', pady=self.px(10))
         for text, command in entries:
             ImageButton(self, holder, t(text), command).widget.pack(side='left', padx=(0, self.px(8)))
 
     def footer(self, foot, entries):
+        """The card's footer: a rule, then the buttons on the right."""
+        self.tk.Frame(foot, bg=LINE, height=1).pack(fill='x', pady=(self.px(10), self.px(14)))
+        row = self.tk.Frame(foot, bg=CARD)
+        row.pack(fill='x')
         for text, command, primary in reversed(entries):
-            ImageButton(self, foot, t(text), command, 'pri' if primary else 'gh').widget.pack(side='right', padx=(self.px(10), 0))
+            ImageButton(self, row, t(text), command, 'pri' if primary else 'gh').widget.pack(side='right', padx=(self.px(10), 0))
 
     def hint(self, parent, text):
-        self.tk.Label(parent, text=t(text), bg=PAPER, fg=MU, font=self.font(13), anchor='w', justify='left',
-                      wraplength=self.px(PANEL_W - 110)).pack(fill='x', pady=(self.px(4), self.px(8)))
+        self.tk.Label(parent, text=t(text), bg=CARD, fg=TEXT2, font=self.font(12.5), anchor='w', justify='left',
+                      wraplength=self.px(PANEL_W - 120)).pack(fill='x', pady=(self.px(4), self.px(8)))
 
     # ---- the pages ---------------------------------------------------------------------------
     def page_game(self, body, foot):
@@ -1526,21 +1613,21 @@ class LauncherWindow:
                 head = tk.Frame(body, bg=PAPER, height=self.px(26))
                 head.pack(fill='x', pady=(self.px(4), 0))
                 head.pack_propagate(False)
-                for text, x in (('COMMAND', 0), ('CONTROLLER', 168), ('KEYBOARD', 318)):  # the rows' columns
-                    tk.Label(head, text=t(text), bg=PAPER, fg=MU, font=self.font(12, 'bold')).place(
+                for text, x in (('COMMAND', 0), ('CONTROLLER', 250), ('KEYBOARD', 480)):  # the rows' columns
+                    tk.Label(head, text=t(text), bg=PAPER, fg=TEXT3, font=self.font(11.5, 'bold')).place(
                         x=self.px(x), rely=.5, anchor='w')
             for button, default_key, pad in members:
                 line = tk.Frame(body, bg=PAPER, height=self.px(36))
                 line.pack(fill='x')
                 line.pack_propagate(False)
                 tk.Label(line, text=t(BUTTON_NAMES[button]), bg=PAPER, fg=SD,
-                         font=self.font(13.5, 'normal', 'Cabin SemiBold'), width=0, anchor='w').place(x=0, rely=.5, anchor='w')
+                         font=self.font(13.5), width=0, anchor='w').place(x=0, rely=.5, anchor='w')
                 pad_label = t(pads.get(pad, pad) if pad else 'Trigger')
                 tk.Label(line, text=pad_label, bg=PAPER, fg=SD,
-                         font=self.font(13.5, 'normal', 'Cabin SemiBold')).place(x=self.px(168), rely=.5, anchor='w')
+                         font=self.font(13.5)).place(x=self.px(250), rely=.5, anchor='w')
                 chip = ImageButton(self, line, keys.get(button) or default_key, None, 'chip')
                 chip.command = lambda b=button, c=chip: self.start_capture(b, c)
-                chip.widget.place(x=self.px(318), rely=.5, anchor='w')
+                chip.widget.place(x=self.px(480), rely=.5, anchor='w')
         self.footer(foot, [('Reset', self.reset_controls, False), ('Apply', self.apply, True)])
 
     def page_advanced(self, body, foot):
@@ -1588,12 +1675,13 @@ class LauncherWindow:
     def page_log(self, body, foot):
         tk = self.tk
         self.body_canvas.configure(yscrollincrement=1)
-        tk.Label(body, text=t('Game messages'), bg=PAPER, fg=MU, font=self.font(14)).pack(anchor='w')
-        text = self.console = tk.Text(body, height=16, bg=INK, fg='#aab3a4', insertbackground=PAPER, relief='flat',
-                                      font=('Consolas', -self.px(12)), highlightthickness=self.px(3), highlightbackground=INK,
-                                      wrap='none', padx=self.px(10), pady=self.px(8))
-        text.tag_configure('ok', foreground='#6be06a')
-        text.tag_configure('warn', foreground='#ffb454')
+        tk.Label(body, text=t('Game messages'), bg=PAPER, fg=TEXT2, font=self.font(13)).pack(anchor='w')
+        text = self.console = tk.Text(body, height=18, bg=CONSOLE_BG, fg='#b8c2cd', insertbackground=TEXT, relief='flat',
+                                      font=('Consolas', -self.px(12)), highlightthickness=1, highlightbackground=LINE,
+                                      highlightcolor=LINE, wrap='none', padx=self.px(12), pady=self.px(10),
+                                      selectbackground=ACCENT, selectforeground=ON_ACCENT)
+        text.tag_configure('ok', foreground=OK_C)
+        text.tag_configure('warn', foreground=ACCENT)
         text.pack(fill='both', expand=True, pady=(self.px(8), 0))
         if not self.log_lines:
             try:
@@ -1627,9 +1715,8 @@ class LauncherWindow:
         self.save()
         LANG = pick_language(code, self.logic.windows_language())
         self.render_nav()
-        self.photos['ver'] = ImageTk.PhotoImage(self.paint.label(t('VERSION {}').format(self.logic.VERSION), 12, PAPER,
-                                                                spacing=.3, shadow=INK))
-        self.cv.itemconfigure(self.ver, image=self.photos['ver'])
+        self.render_play()
+        self.cv.itemconfigure(self.ver, text=t('Version {}').format(self.logic.VERSION))
         self.refresh_status()
         self.open_page(self.page)
 
@@ -1773,50 +1860,52 @@ class LauncherWindow:
 
     # ---- modal and toast -------------------------------------------------------------------
     def modal(self, title, text, buttons, gauge=False, size=None):
-        """A dialog on a dimmed window: paper box, pops in with a small bounce. size: (w, h)."""
+        """A dialog: the window dims, the card sits right of the sidebar, as tall as its content,
+        and rises a little. size: (width, ignored height)."""
         self.close_modal()
         tk, cv = self.tk, self.cv
         self.photos['overlay'] = ImageTk.PhotoImage(self.paint.overlay())
         dim = cv.create_image(0, 0, anchor='nw', image=self.photos['overlay'])
-        bw, bh = size or (400, 200 if gauge or buttons else 170)
-        self.photos['box'] = ImageTk.PhotoImage(self.paint.panel(bw, bh))
-        bx, by = (W - bw) / 2, (H - bh) / 2
-        box = cv.create_image(self.px(bx), self.px(by), anchor='nw', image=self.photos['box'])
-        frame = tk.Frame(cv, bg=PAPER, width=self.px(bw - 58), height=self.px(bh - 50))
-        frame.pack_propagate(False)
-        win = cv.create_window(self.px(bx + 29), self.px(by + 26), anchor='nw', window=frame)
-        photo = ImageTk.PhotoImage(self.paint.label(title, 24, INK, spacing=.1, upper=True))
-        heading = tk.Label(frame, image=photo, bg=PAPER, bd=0)
-        heading.image = photo
-        heading.pack(anchor='w')
+        bw = (size or (440, 0))[0]
+        frame = tk.Frame(cv, bg=CARD)
+        tk.Frame(frame, bg=CARD, width=self.px(bw - 56), height=0).pack()  # the dialog's width
+        tk.Label(frame, text=title, bg=CARD, fg=TEXT, font=self.font(19, 'normal', UI_FONT_SEMI), anchor='w').pack(fill='x')
         self.modal_gauge = None
         if gauge:
-            self.modal_gauge = tk.Label(frame, bg=PAPER, bd=0)
-            self.modal_gauge.pack(fill='x', pady=(self.px(10), 0))
+            self.gauge_width = bw - 56
+            self.modal_gauge = tk.Label(frame, bg=CARD, bd=0)
+            self.modal_gauge.pack(fill='x', pady=(self.px(14), 0))
             self.gauge_fraction, self.gauge_phase = .08, 0.0
             self.tick_gauge()
-        self.modal_text = tk.Label(frame, text=text, bg=PAPER, fg=SD, font=self.font(15), anchor='w', justify='left',
+        self.modal_text = tk.Label(frame, text=text, bg=CARD, fg=TEXT2, font=self.font(14), anchor='w', justify='left',
                                    wraplength=self.px(bw - 60))
-        self.modal_text.pack(fill='x', pady=(self.px(10), self.px(10)))
-        foot = tk.Frame(frame, bg=PAPER)
-        foot.pack(side='bottom', fill='x')
-        for label, command, primary in reversed(buttons):
-            ImageButton(self, foot, t(label), command, 'pri' if primary else 'gh').widget.pack(side='right', padx=(self.px(10), 0))
+        self.modal_text.pack(fill='x', pady=(self.px(10), self.px(4)))
+        if buttons:
+            foot = tk.Frame(frame, bg=CARD)
+            foot.pack(fill='x', pady=(self.px(18), 0))
+            for label, command, primary in reversed(buttons):
+                ImageButton(self, foot, t(label), command, 'pri' if primary else 'gh').widget.pack(side='right', padx=(self.px(10), 0))
+        frame.update_idletasks()
+        bh = frame.winfo_reqheight() / self.s + 48
+        self.photos['box'] = ImageTk.PhotoImage(self.paint.panel(bw, bh))
+        bx, by = CONTENT_CX - bw / 2, (H - bh) / 2
+        box = cv.create_image(self.px(bx - 28), self.px(by - 28), anchor='nw', image=self.photos['box'])
+        win = cv.create_window(self.px(bx + 28), self.px(by + 24), anchor='nw', window=frame)
         self.modal_frame = frame
         self.modal_items = [dim, box, win]
 
         def pop(v):
-            dy = 30 * (1 - v)
-            cv.coords(box, self.px(bx), self.px(by + dy))
-            cv.coords(win, self.px(bx + 29), self.px(by + 26 + dy))
+            dy = 10 * (1 - v)
+            cv.coords(box, self.px(bx - 28), self.px(by - 28 + dy))
+            cv.coords(win, self.px(bx + 28), self.px(by + 24 + dy))
         pop(0.0)
-        self.anim.add(400, pop, ease_out_back)
+        self.anim.add(200, pop, ease_out)
 
     def tick_gauge(self):
         if not self.modal_gauge or not self.modal_gauge.winfo_exists():
             return
-        self.gauge_phase = (self.gauge_phase + 0.06) % 1.0
-        photo = ImageTk.PhotoImage(self.paint.gauge(340, self.gauge_fraction, self.gauge_phase))
+        self.gauge_phase = (self.gauge_phase + 0.025) % 1.0
+        photo = ImageTk.PhotoImage(self.paint.gauge(self.gauge_width, self.gauge_fraction, self.gauge_phase))
         self.modal_gauge.configure(image=photo)
         self.modal_gauge.image = photo
         self.root.after(33, self.tick_gauge)
@@ -1831,20 +1920,15 @@ class LauncherWindow:
         self.modal_gauge = None
 
     def toast(self, text):
+        """A notice at the top of the picture, right of the sidebar and above the card."""
         for item in self.toast_items:
             self.cv.delete(item)
-        k = self.s * 2
-        font = pil_font(14 * k)
-        w = text_width(text, font, 0) / k + 46
-        img = self.paint.canvas(w, 44)
-        d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, w * k, 44 * k), 22 * k, fill=rgba(INK), outline=rgba(OR), width=round(3 * k))
-        draw_text(d, 23 * k, text_top(font, 44 * k), text, font, rgba(PAPER))
-        self.photos['toast'] = ImageTk.PhotoImage(self.paint.done(img))
-        item = self.cv.create_image(self.px(W / 2), self.px(H - 78), anchor='s', image=self.photos['toast'])
+        self.photos['toast'] = ImageTk.PhotoImage(self.paint.toast(text))
+        item = self.cv.create_image(self.px(CONTENT_CX), self.px(8), anchor='n', image=self.photos['toast'])
         self.toast_items = [item]
-        self.anim.add(350, lambda v: self.cv.coords(item, self.px(W / 2), self.px(H - 78 + 16 * (1 - v))), ease_out_back)
-        self.root.after(1800, lambda: item in self.toast_items and (self.cv.delete(item), self.toast_items.remove(item)))
+        self.anim.add(240, lambda v: self.cv.coords(item, self.px(CONTENT_CX), self.px(8 - 8 * (1 - v)) if v < 1 else self.px(8)),
+                      ease_out)
+        self.root.after(2200, lambda: item in self.toast_items and (self.cv.delete(item), self.toast_items.remove(item)))
 
     # ---- updates -----------------------------------------------------------------------------
     def check_update(self, manual=False):
@@ -1946,11 +2030,6 @@ class LauncherWindow:
         self.root.destroy()
 
     # ---- launch ----------------------------------------------------------------------------
-    def gravity_items(self):
-        """Everything that falls "up" when the game starts, in order."""
-        items = [self.nav_items[k]['id'] for k, _l, _h in self.nav_entries()] + [self.brand]
-        return items + self.panel_items + self.status_items + [self.ver]
-
     def launch(self):
         if self.process:
             return
@@ -1964,17 +2043,7 @@ class LauncherWindow:
             self.capture = None
         if self.page:
             self.open_page(None)
-        # Gravity shift: the interface tilts away upward, 45 ms apart, then the gauge.
-        items = self.gravity_items()
-        self.lifted = []
-        for index, item in enumerate(items):
-            x, y = self.cv.coords(item)[:2] if self.cv.coords(item) else (0, 0)
-            self.lifted.append((item, x, y))
-
-            def update(v, item=item, x=x, y=y):
-                self.cv.coords(item, x, y - self.px(H * 1.1) * v)
-            self.anim.add(900, update, ease_in, delay_ms=index * 45)
-        self.root.after(1000 if self.anim.enabled else 0, self.start_game)
+        self.start_game()
 
     def start_game(self):
         logic = self.logic
@@ -1984,7 +2053,6 @@ class LauncherWindow:
             self.process = subprocess.Popen(logic.run_command(), cwd=logic.PORT_DIR, env=env, stdin=subprocess.DEVNULL,
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=logic.NO_WINDOW)
         except OSError as error:
-            self.drop_back()
             self.toast(t('Could not: {}').format(error))
             return
         self.job = logic.GameJob(self.process)
@@ -2061,20 +2129,7 @@ class LauncherWindow:
             self.job = None
         self.close_modal()
         self.refresh_status()
-        self.drop_back()
         self.toast(t('The game exited.'))
-
-    def drop_back(self):
-        """The interface falls back in after the game."""
-        for index, (item, x, y) in enumerate(getattr(self, 'lifted', [])):
-            if not self.cv.type(item):
-                continue
-            start = self.cv.coords(item)[1] if self.cv.coords(item) else y
-
-            def update(v, item=item, x=x, y=y, start=start):
-                self.cv.coords(item, x, start + (y - start) * v)
-            self.anim.add(750, update, ease_out_back, delay_ms=index * 40)
-        self.lifted = []
 
 
 def run(logic, tk, filedialog):

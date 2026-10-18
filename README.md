@@ -44,8 +44,8 @@ What works today:
 - **Input:** controllers through SDL3 (Xbox, DualSense and others), keyboard and mouse.
   The touchpad works with real touch ids; the mouse acts as a finger (hold and drag for swipes).
   The **DualSense gyro** steers the gravity camera like on the PS4 (adjustable sensitivity).
-- **Launcher:** a comic-book styled window with the game, video, controls, advanced and
-  log pages, in English, Italian, French, German and Spanish. `Gravity Rush.exe` starts the game directly with the saved settings.
+- **Launcher:** a dark window with a sidebar menu and pages in a card (game, video, controls,
+  advanced, log), in English, Italian, French, German and Spanish. `Gravity Rush.exe` starts the game directly with the saved settings.
   The launcher finds new releases on GitHub by itself and installs them when the player agrees
   (saves, settings and mods are kept).
 - **In-game menu** (Insert, or R3+L2): image options, performance and an FPS overlay.
