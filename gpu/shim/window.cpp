@@ -9,8 +9,70 @@
 #include "gow3_overlay.h"
 #include "gow3_graphics.h"
 #include "gow3_settings.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace Frontend {
+
+// gow3: Borderless keeps the desktop's display mode, so a refresh rate chosen in gravityrush.ini is
+// set on the window's monitor itself: the mode at the desktop size closest to it, as a temporary
+// change (CDS_FULLSCREEN: never stored, Windows restores the desktop's mode when the game exits).
+// hz 0 puts the desktop's mode back.
+static void SetMonitorRefresh(SDL_Window* window, int hz) {
+#ifdef _WIN32
+    static bool changed = false;
+    static WCHAR changed_device[CCHDEVICENAME] = {};
+    if (hz <= 0) {
+        if (changed) {
+            ChangeDisplaySettingsExW(changed_device, nullptr, nullptr, 0, nullptr);
+            changed = false;
+            std::printf("Window: monitor back to the desktop refresh rate\n");
+        }
+        return;
+    }
+    HWND hwnd = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                                         SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (!hwnd || !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &info)) {
+        return;
+    }
+    DEVMODEW current{};
+    current.dmSize = sizeof(current);
+    if (!EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &current)) {
+        return;
+    }
+    DEVMODEW best{}, mode{};
+    best.dmSize = mode.dmSize = sizeof(DEVMODEW);
+    bool found = false;
+    for (DWORD i = 0; EnumDisplaySettingsW(info.szDevice, i, &mode); ++i) {
+        if (mode.dmPelsWidth != current.dmPelsWidth || mode.dmPelsHeight != current.dmPelsHeight ||
+            mode.dmBitsPerPel != current.dmBitsPerPel) {
+            continue;
+        }
+        const int gap = std::abs(int(mode.dmDisplayFrequency) - hz);
+        if (!found || gap < std::abs(int(best.dmDisplayFrequency) - hz)) {
+            best = mode;
+            found = true;
+        }
+    }
+    if (!found || best.dmDisplayFrequency == current.dmDisplayFrequency) {
+        return;
+    }
+    best.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY;
+    const LONG result = ChangeDisplaySettingsExW(info.szDevice, &best, nullptr, CDS_FULLSCREEN, nullptr);
+    if (result == DISP_CHANGE_SUCCESSFUL) {
+        changed = true;
+        std::memcpy(changed_device, info.szDevice, sizeof(changed_device));
+    }
+    std::printf("Window: monitor %ux%u at %u Hz (%s)\n", unsigned(best.dmPelsWidth), unsigned(best.dmPelsHeight),
+                unsigned(best.dmDisplayFrequency), result == DISP_CHANGE_SUCCESSFUL ? "set" : "refused");
+#else
+    (void)window;
+    (void)hz;
+#endif
+}
 
 WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}, height{height_} {
     // Gamepads are sampled by runtime_pad.c; their events are pumped here with the window's.
@@ -69,12 +131,15 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     LOG_INFO(Frontend, "Window {}x{} on {}", w, h, driver);
 }
 
-// Windowed, borderless (desktop-sized, no mode change) or exclusive fullscreen at the desktop
-// size, with the refresh rate of gravityrush.ini (refresh_rate, 0: the desktop's). Window thread
-// only (SDL). The swapchain follows the size events.
+// Windowed, borderless (desktop-sized, the monitor at the chosen refresh rate) or exclusive
+// fullscreen at the desktop size, with the refresh rate of gravityrush.ini (refresh_rate, 0: the
+// desktop's). Window thread only (SDL). The swapchain follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
     refresh_rate = Gow3Settings::Get().refresh_rate;
+    // Borderless: the monitor takes the chosen refresh rate; windowed and exclusive fullscreen
+    // (where SDL sets the mode) leave the desktop's.
+    SetMonitorRefresh(window, mode == Gow3Graphics::Borderless ? refresh_rate : 0);
     if (mode == Gow3Graphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
     } else {
