@@ -42,8 +42,9 @@ std::vector<std::string> pending_buffers;
 
 void AddBuffers(Entry& entry) {
     // Constants of full-screen passes (post-processing: camera matrices) and of the first draw
-    // of each geometry pass.
-    if (entry.draws <= 4) {
+    // of each geometry pass; GOW3_CAPTURE_ALL=1: of every draw (2D screens, diagnostics).
+    static const bool all = std::getenv("GOW3_CAPTURE_ALL") != nullptr;
+    if (entry.draws <= 4 || all) {
         for (auto& b : pending_buffers) {
             entry.buffers.push_back(std::move(b));
         }
@@ -278,6 +279,11 @@ void FrameCapture::Draw(u64 vs_hash, u64 ps_hash, u32 num_indices, u32 num_insta
     auto& e = entries.back();
     ++e.draws;
     e.indices += u64(num_indices) * std::max(num_instances, 1u);
+    static const bool all = std::getenv("GOW3_CAPTURE_ALL") != nullptr;
+    if (all) {
+        e.buffers.push_back(std::format("  draw {} vs {:016x} ps {:016x} indices {}", e.draws, vs_hash, ps_hash,
+                                        num_indices));
+    }
     AddShader(e, vs_hash);
     AddShader(e, ps_hash);
     AddSampled(e);

@@ -110,11 +110,11 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
     };
 
     if (!recording_threaded) {
-        current_cmdbuf.beginRendering(rendering_info);
+        BeginRenderingCommand(current_cmdbuf, rendering_info);
         return;
     }
     // The attachment infos live on this stack frame: the recorded closure keeps copies.
-    Record([info = rendering_info, color_attachments, depth_attachment,
+    Record([this, info = rendering_info, color_attachments, depth_attachment,
             stencil_attachment](vk::CommandBuffer cmdbuf) mutable {
         info.pColorAttachments = color_attachments.data();
         if (info.pDepthAttachment) {
@@ -123,8 +123,39 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         if (info.pStencilAttachment) {
             info.pStencilAttachment = &stencil_attachment;
         }
-        cmdbuf.beginRendering(info);
+        BeginRenderingCommand(cmdbuf, info);
     });
+}
+
+// gow3: what the command buffer really holds when the commands execute (on the recording
+// thread, or the caller's in direct mode; never both at once). An end without a begin reached
+// the NVIDIA driver as a null pointer read in vkCmdEndRendering (seen on the recorder thread
+// while a movie started and during a save): such an end is dropped, and a rendering still open
+// at submission is closed, so the command buffer stays valid.
+void Scheduler::BeginRenderingCommand(vk::CommandBuffer cmdbuf, const vk::RenderingInfo& info) {
+    if (executing_rendering) {
+        cmdbuf.endRendering();
+        ReportUnbalancedRendering("a rendering began while one was open: closed first");
+    }
+    cmdbuf.beginRendering(info);
+    executing_rendering = true;
+}
+
+void Scheduler::EndRenderingCommand(vk::CommandBuffer cmdbuf) {
+    if (!executing_rendering) {
+        ReportUnbalancedRendering("an end of rendering without a begin: dropped");
+        return;
+    }
+    cmdbuf.endRendering();
+    executing_rendering = false;
+}
+
+void Scheduler::ReportUnbalancedRendering(const char* what) {
+    static std::atomic<u32> reported{0};
+    if (reported.fetch_add(1, std::memory_order_relaxed) < 20) {
+        std::printf("Scheduler: %s\n", what);
+        std::fflush(stdout);
+    }
 }
 
 void Scheduler::EndRendering() {
@@ -132,7 +163,7 @@ void Scheduler::EndRendering() {
         return;
     }
     is_rendering = false;
-    Record([](vk::CommandBuffer cmdbuf) { cmdbuf.endRendering(); });
+    Record([this](vk::CommandBuffer cmdbuf) { EndRenderingCommand(cmdbuf); });
 }
 
 void Scheduler::TraceDirectRecording(void* caller) {
@@ -400,6 +431,7 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 
     current_cmdbuf = command_pool.Commit();
     Check(current_cmdbuf.begin(begin_info));
+    executing_rendering = false;
 
     // Invalidate dynamic state so it gets applied to the new command buffer.
     dynamic_state.Invalidate();
@@ -438,6 +470,11 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     SyncRecording();
     // Guest memory copies into staging read by this submission (copy threads).
     WaitHostCopies();
+    if (executing_rendering) {  // an unbalanced begin: the command buffer must not end inside it
+        current_cmdbuf.endRendering();
+        executing_rendering = false;
+        ReportUnbalancedRendering("a rendering still open at submission: closed");
+    }
     Check(current_cmdbuf.end());
 
     const vk::Semaphore timeline = work_semaphore.Handle();

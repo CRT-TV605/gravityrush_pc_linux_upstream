@@ -950,6 +950,11 @@ private:
     std::atomic<size_t> queued_chunks{0}; ///< recorder_queue.size() for lock-free polling
     bool recorder_sleeping = false; ///< waiting on recorder_cv (guarded by recorder_mutex)
     bool direct_mode = false; ///< the command buffer is recorded on the caller's thread
+    /// gow3: a rendering is open in the command buffer as executed (BeginRenderingCommand).
+    bool executing_rendering = false;
+    void BeginRenderingCommand(vk::CommandBuffer cmdbuf, const vk::RenderingInfo& info);
+    void EndRenderingCommand(vk::CommandBuffer cmdbuf);
+    static void ReportUnbalancedRendering(const char* what);
     u64 host_copies_issued = 0;
     std::atomic<u64> host_copies_done{0};
     std::atomic<u64> deferred_signals_issued{0}; ///< by the thread recording (A or B)

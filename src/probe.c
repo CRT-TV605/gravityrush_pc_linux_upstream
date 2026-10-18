@@ -143,11 +143,30 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     /* Unwind through the x64 unwind tables (system libraries keep no frame pointers); stops at the
      * first frame without unwind data (guest code), where the rbp chain below goes on. */
     {
+        /* Which thread (named threads: the GPU thread, the Vulkan recorder, guest threads...). */
+        typedef HRESULT (WINAPI *GetThreadDescriptionFn)(HANDLE, PWSTR *);
+        GetThreadDescriptionFn describe_thread =
+            (GetThreadDescriptionFn)(void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetThreadDescription");
+        PWSTR thread_name = NULL;
+        if (describe_thread && SUCCEEDED(describe_thread(GetCurrentThread(), &thread_name)) && thread_name) {
+            fprintf(stderr, "  thread name: %ls\n", thread_name);
+            LocalFree(thread_name);
+        }
         CONTEXT u=*c;
         for (int depth=0; depth<24 && u.Rip; ++depth) {
             DWORD64 base=0;
             PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(u.Rip,&base,NULL);
-            if (!fn) break;
+            if (!fn) {  /* a host leaf function (a driver's): its return address is on top */
+                if (depth || (image && u.Rip-(uintptr_t)image<0x20000000)) break;
+                DWORD64 ret=0;
+                SIZE_T got=0;
+                if (!ReadProcessMemory(GetCurrentProcess(),(void *)u.Rsp,&ret,sizeof(ret),&got) || got!=sizeof(ret)) break;
+                u.Rip=ret;
+                u.Rsp+=8;
+                describe_address(where,sizeof(where),(uintptr_t)u.Rip);
+                fprintf(stderr,"  unwind #%d %s (leaf)\n",depth,where);
+                continue;
+            }
             void *handler_data=NULL;
             DWORD64 frame=0;
             RtlVirtualUnwind(UNW_FLAG_NHANDLER,base,u.Rip,fn,&u,&handler_data,&frame,NULL);
