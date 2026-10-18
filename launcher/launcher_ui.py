@@ -114,11 +114,11 @@ _ROWS = [
     ('FPS limit', 'Limite FPS', 'Limite d\'IPS', 'FPS-Limit', 'Límite de FPS'),
     ('Refresh rate', 'Frequenza schermo', 'Fréquence d\'affichage', 'Bildwiederholrate', 'Frecuencia de pantalla'),
     ('Desktop', 'Come Windows', 'Comme Windows', 'Wie Windows', 'Como Windows'),
-    ('Used in Fullscreen. Borderless and windowed follow the Windows setting.',
-     'Vale in Schermo intero. Senza bordi e Finestra seguono l\'impostazione di Windows.',
-     'Utilisée en Plein écran. Sans bordure et Fenêtré suivent le réglage de Windows.',
-     'Gilt im Vollbild. Rahmenlos und Fenster folgen der Windows-Einstellung.',
-     'Se usa en Pantalla completa. Sin bordes y Ventana siguen el ajuste de Windows.'),
+    ('Used in Fullscreen and Borderless, while the game runs. Windowed keeps the Windows setting.',
+     'Vale in Schermo intero e Senza bordi, mentre giochi. In Finestra resta quella di Windows.',
+     'S\'applique en Plein écran et Sans bordure, pendant le jeu. En Fenêtré, le réglage de Windows reste.',
+     'Gilt im Vollbild und rahmenlos, während das Spiel läuft. Im Fenster bleibt die Windows-Einstellung.',
+     'Se aplica en Pantalla completa y Sin bordes, mientras juegas. En Ventana se mantiene el ajuste de Windows.'),
     ('Unlimited', 'Libero', 'Illimité', 'Unbegrenzt', 'Sin límite'),
     ('IMAGE', 'IMMAGINE', 'IMAGE', 'BILD', 'IMAGEN'),
     ('F12 closes the game', 'F12 chiude il gioco', 'F12 ferme le jeu', 'F12 beendet das Spiel', 'F12 cierra el juego'),
@@ -1563,7 +1563,7 @@ class LauncherWindow:
             rates.append((rate, f'{rate} Hz'))
         self.row(body, 'Refresh rate',
                  lambda c: self.choice(c, rates, rate, lambda v: self.set_ini('refresh_rate', v), 16).pack(side='right'),
-                 'Used in Fullscreen. Borderless and windowed follow the Windows setting.')
+                 'Used in Fullscreen and Borderless, while the game runs. Windowed keeps the Windows setting.')
         self.sec(body, 'IMAGE')
         current = self.ini.get('render_resolution', 'native')
         if current not in dict(RESOLUTION_CHOICES):
@@ -2147,6 +2147,8 @@ class LauncherWindow:
         if self.job:
             self.job.close()
             self.job = None
+        # The in-game menu may have changed gravityrush.ini: later saves start from the file.
+        self.ini, self.ini_lines = self.logic.load_ini()
         self.close_modal()
         self.refresh_status()
         if getattr(self, 'stepped_aside', False):
