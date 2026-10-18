@@ -12,6 +12,8 @@
 
 #include "video_core/renderer_vulkan/vk_dlss.h"
 
+#include "gow3_settings.h"
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -88,6 +90,14 @@ Dlss* Dlss::Get() {
     static Dlss* const dlss = []() -> Dlss* {
         const char* setting = std::getenv("GOW3_DLSS");
         if (setting && setting[0] == '0') {
+            return nullptr;
+        }
+        // gow3: NGX is started only when DLSS is the chosen upscaler (gravityrush.ini, read
+        // before the device exists; GOW3_DLSS=1 forces it): its start-up sometimes never returned,
+        // and the game then stayed on a black screen even for players who do not use DLSS.
+        if (!(setting && setting[0] == '1') &&
+            Gow3Settings::Get().upscaler != Gow3Settings::UpscalerDlss) {
+            std::printf("DLSS: not started (another upscaler is chosen)\n");
             return nullptr;
         }
         const auto directory = ExecutableDirectory();

@@ -74,7 +74,9 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "preset") {
         v.preset = std::clamp(i, 0, PresetCount - 1);
     } else if (key == "sharpen") {
-        v.sharpen = i != 0;
+        // Gravity Rush: the temporal sharpening stays off (it strengthened a fine grid the game
+        // draws on its surfaces); older settings files still say 1.
+        v.sharpen = false;
     } else if (key == "sharpness") {
         v.sharpness = Clamp(f, 0.0f, 2.0f);
     } else if (key == "jitter") {

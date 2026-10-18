@@ -296,11 +296,11 @@ _ROWS = [
      'Eine einfache Vergrößerung auf den Bildschirm, wenn die Render-Auflösung niedriger ist, mit FXAA oder TAA. FSR 3.1 macht das detailreicher.',
      'Una ampliación sencilla hasta la pantalla cuando la resolución de renderizado es menor, con FXAA o TAA. FSR 3.1 lo hace con más detalle.'),
     ('Sharpening', 'Nitidezza', 'Netteté', 'Schärfe', 'Nitidez'),
-    ('Sharpens the image after TAA or FSR 3.1, or after FSR 1.0 when the game image is smaller than the screen. 0: off.',
-     'Rende più nitida l’immagine dopo TAA o FSR 3.1, oppure dopo FSR 1.0 se l’immagine del gioco è più piccola dello schermo. 0: disattivata.',
-     'Rend l’image plus nette après TAA ou FSR 3.1, ou après FSR 1.0 si l’image du jeu est plus petite que l’écran. 0 : désactivée.',
-     'Schärft das Bild nach TAA oder FSR 3.1, oder nach FSR 1.0, wenn das Spielbild kleiner als der Bildschirm ist. 0: aus.',
-     'Hace más nítida la imagen después de TAA o FSR 3.1, o después de FSR 1.0 si la imagen del juego es menor que la pantalla. 0: desactivada.'),
+    ('Sharpens the final image with FSR 1.0, when the game image is smaller than the screen. 0: off.',
+     'Rende più nitida l’immagine finale con FSR 1.0, se l’immagine del gioco è più piccola dello schermo. 0: disattivata.',
+     'Rend l’image finale plus nette avec FSR 1.0, si l’image du jeu est plus petite que l’écran. 0 : désactivée.',
+     'Schärft das fertige Bild mit FSR 1.0, wenn das Spielbild kleiner als der Bildschirm ist. 0: aus.',
+     'Hace más nítida la imagen final con FSR 1.0, si la imagen del juego es menor que la pantalla. 0: desactivada.'),
     ('Simple upscaler',
      'Upscaler semplice',
      'Upscaler simple',
@@ -407,7 +407,8 @@ TEMPORAL_AA = ('taa', 'fsr3', 'dlss')
 
 
 def dlss_installed():
-    folders = [Path(sys.executable).parent / 'bin', Path(__file__).resolve().parent.parent / 'out']
+    folders = [Path(sys.executable).parent / 'bin', Path(sys.executable).parent / 'out',
+               Path(__file__).resolve().parent.parent / 'out']
     return any((f / 'gow3_dlss.dll').is_file() and (f / 'nvngx_dlss.dll').is_file() for f in folders)
 
 
@@ -1648,15 +1649,13 @@ class LauncherWindow:
                 v = int(round(v))
                 shown.configure(text=f'{v}%')
                 self.ini['rcas'] = '1' if v > 0 else '0'
-                self.ini['sharpen'] = '1' if v > 0 else '0'
                 if v > 0:
                     self.ini['rcas_strength'] = str(v)
-                    self.ini['sharpness'] = f'{v / 100 * 0.7:.2f}'
                 self.save()
             Slider(self, control, 0, 100, 5, value, changed).widget.pack(side='left')
             shown.pack(side='left')
         self.row(body, 'Sharpening', make_sharpening,
-                 'Sharpens the image after TAA or FSR 3.1, or after FSR 1.0 when the game image is smaller than the screen. 0: off.')
+                 'Sharpens the final image with FSR 1.0, when the game image is smaller than the screen. 0: off.')
         shadows = self.ini.get('shadow_quality', 'standard')
         self.row(body, 'Shadow quality',
                  lambda c: self.choice(c, SHADOW_CHOICES, shadows if shadows in dict(SHADOW_CHOICES) else 'standard',
@@ -1673,8 +1672,8 @@ class LauncherWindow:
                                                          'render_resolution': 'native', 'anisotropy': '16',
                                                          'shadow_quality': 'standard', 'fxaa': '1', 'upscaler': 'off',
                                                          'fsr1': '0',
-                                                         'rcas': '1', 'rcas_strength': '75', 'sharpen': '1',
-                                                         'sharpness': '0.53'}), False),
+                                                         'rcas': '1', 'rcas_strength': '75', 'sharpen': '0'}),
+                           False),
                            ('Apply', self.apply, True)])
 
     def page_controls(self, body, foot):

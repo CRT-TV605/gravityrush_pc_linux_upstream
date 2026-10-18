@@ -18,6 +18,7 @@
 #include "gow3_toggles.h"
 #include "ffx_vk_portable.h"
 #include "video_core/host_shaders/upscale_merge_comp.h"
+#include "video_core/host_shaders/upscale_sanitize_comp.h"
 #include "video_core/host_shaders/upscale_reactive_comp.h"
 #include "video_core/host_shaders/taa_comp.h"
 #include "video_core/host_shaders/taa_sharpen_comp.h"
@@ -1061,6 +1062,8 @@ void TemporalUpscaler::CreatePipelines() {
         }));
     }
     merge_pipeline = compute(UPSCALE_MERGE_COMP, *merge_pipeline_layout);
+    storage_layout(1, sanitize_desc_layout, sanitize_pipeline_layout, sizeof(u32));
+    sanitize_pipeline = compute(UPSCALE_SANITIZE_COMP, *sanitize_pipeline_layout);
     storage_layout(3, reactive_desc_layout, reactive_pipeline_layout, 3 * sizeof(float));
     reactive_pipeline = compute(UPSCALE_REACTIVE_COMP, *reactive_pipeline_layout);
     storage_layout(2, taa_sharpen_desc_layout, taa_sharpen_pipeline_layout, sizeof(float));
@@ -1496,8 +1499,30 @@ void TemporalUpscaler::Run() {
     runtime.Transit(&depth, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
                     vk::AccessFlagBits2::eShaderRead);
     runtime.Transit(&color, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
-                    vk::AccessFlagBits2::eShaderRead);
+                    vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite);
     runtime.FlushBarriers();
+    if (!reduced) {
+        // NaN, infinite or negative pixels (the brightest lights) would stay in the upscaler's
+        // history as flashing black patches: made finite first, in place.
+        const auto sanitize_cmdbuf = scheduler.CommandBuffer();
+        const vk::DescriptorImageInfo info{.imageView = color_view,
+                                           .imageLayout = vk::ImageLayout::eGeneral};
+        const vk::WriteDescriptorSet write{.dstBinding = 0,
+                                           .descriptorCount = 1,
+                                           .descriptorType = vk::DescriptorType::eStorageImage,
+                                           .pImageInfo = &info};
+        sanitize_cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *sanitize_pipeline);
+        sanitize_cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
+                                             *sanitize_pipeline_layout, 0, write);
+        sanitize_cmdbuf.dispatch((ow + 7) / 8, (oh + 7) / 8, 1);
+        const vk::MemoryBarrier2 sanitized{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        };
+        sanitize_cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &sanitized});
+    }
     vk::Image input_color = color.GetImage(), input_depth = depth.GetImage();
     vk::ImageView input_color_view = color_view, input_depth_view = depth_view;
     if (reduced) {

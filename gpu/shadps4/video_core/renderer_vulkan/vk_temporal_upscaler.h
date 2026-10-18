@@ -336,6 +336,9 @@ private:
     vk::UniqueDescriptorSetLayout merge_desc_layout;
     vk::UniquePipelineLayout merge_pipeline_layout;
     vk::UniquePipeline merge_pipeline;
+    vk::UniqueDescriptorSetLayout sanitize_desc_layout;
+    vk::UniquePipelineLayout sanitize_pipeline_layout;
+    vk::UniquePipeline sanitize_pipeline;
     std::array<VideoCore::UniqueImage, 2> taa_history;
     std::array<vk::UniqueImageView, 2> taa_history_views;
     u32 taa_next = 0;

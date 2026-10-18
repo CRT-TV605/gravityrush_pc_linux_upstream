@@ -30,7 +30,7 @@ inline constexpr int OutputDefault = 1; ///< 1920x1080, the game's own size
 struct Values {
     std::atomic<int> upscaler{UpscalerOff}; ///< Gravity Rush: off (the game's FXAA) by default
     std::atomic<int> preset{NativeAA};
-    std::atomic<bool> sharpen{true};
+    std::atomic<bool> sharpen{false}; ///< temporal sharpening: off (it strengthened a fine grid in GR)
     std::atomic<float> sharpness{0.3f};
     std::atomic<bool> jitter{true};
     std::atomic<bool> reactive{false};
