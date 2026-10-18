@@ -71,6 +71,8 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     }
     // gow3: this thread joins the texture binding helper before it changes image state.
     runtime.SetImageAccessHook(&JoinBindHelper, this);
+    // gow3: the GPU command thread records only once the draw recording thread ran dry.
+    scheduler.SetRecordingCheck(&StageARecordsEarly, this);
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
         runtime.FlushBarriers();
         buffer_cache.SubmitPendingArenaBinds(info);
@@ -423,6 +425,11 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (const u64 waited = draw_pipe->drain_cycles - before) {
         drain_sites[function][line] += waited;
     }
+}
+
+bool Rasterizer::StageARecordsEarly(void* context) {
+    const auto* self = static_cast<const Rasterizer*>(context);
+    return self->draw_pipe && self->OnStageA() && !self->draw_pipe->Idle();
 }
 
 bool Rasterizer::IsGpuSideThread() const {

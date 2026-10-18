@@ -57,10 +57,63 @@ Scheduler::~Scheduler() {
 #endif
 }
 
+#ifdef _WIN32
+extern "C" const char __ImageBase;
+#endif
+
+// gow3: the GPU thread drives the scheduler; a BeginRendering/EndRendering on another thread
+// races with it (an end recorded before its begin crashed NVIDIA's driver). Each thread that
+// starts or ends a rendering on a scheduler is reported once, with its name and caller (an
+// offset in the executable: llvm-symbolizer --adjust-vma=0x140000000).
+void Scheduler::ReportRenderingThread(const char* what, void* caller) {
+    thread_local const Scheduler* reported_for = nullptr;
+    if (reported_for == this) {
+        return;
+    }
+    reported_for = this;
+    static std::atomic<u32> reports{0};
+    if (reports.fetch_add(1, std::memory_order_relaxed) >= 16) {
+        return;
+    }
+#ifdef _WIN32
+    const uintptr_t base = reinterpret_cast<uintptr_t>(&__ImageBase);
+#else
+    const uintptr_t base = 0;
+#endif
+    std::printf("Scheduler %p: %s on thread '%s' (caller exe+0x%llx)\n", static_cast<const void*>(this),
+                what, Common::GetCurrentThreadName().c_str(),
+                static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(caller) - base));
+    std::fflush(stdout);
+}
+
+// gow3: a thread recording while another one may record into the same command stream (the GPU
+// command thread before the draw recording thread ran dry): the race that can put an end of
+// rendering before its begin. Reported with the caller (exe offset, see above).
+void Scheduler::CheckRecordingThread(const char* what, void* caller) {
+    if (!recording_check || !recording_check(recording_check_context)) {
+        return;
+    }
+    static std::atomic<u32> reports{0};
+    if (reports.fetch_add(1, std::memory_order_relaxed) >= 32) {
+        return;
+    }
+#ifdef _WIN32
+    const uintptr_t base = reinterpret_cast<uintptr_t>(&__ImageBase);
+#else
+    const uintptr_t base = 0;
+#endif
+    std::printf("Scheduler: %s on '%s' while the draw recording thread runs (caller exe+0x%llx)\n",
+                what, Common::GetCurrentThreadName().c_str(),
+                static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(caller) - base));
+    std::fflush(stdout);
+}
+
 void Scheduler::BeginRendering(const RenderState& new_state) {
     if (is_rendering && render_state == new_state) {
         return;
     }
+    ReportRenderingThread("rendering begins", __builtin_return_address(0));
+    CheckRecordingThread("rendering begins", __builtin_return_address(0));
     EndRendering();
     is_rendering = true;
     render_state = new_state;
@@ -162,6 +215,8 @@ void Scheduler::EndRendering() {
     if (!is_rendering) {
         return;
     }
+    ReportRenderingThread("rendering ends", __builtin_return_address(0));
+    CheckRecordingThread("rendering ends", __builtin_return_address(0));
     is_rendering = false;
     Record([this](vk::CommandBuffer cmdbuf) { EndRenderingCommand(cmdbuf); });
 }

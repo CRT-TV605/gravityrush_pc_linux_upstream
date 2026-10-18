@@ -716,6 +716,13 @@ public:
         this->on_submit = std::move(on_submit);
     }
 
+    /// gow3: `check(context)` tells when the calling thread must not record (the GPU command
+    /// thread while the draw recording thread still runs packets); such recordings are reported.
+    void SetRecordingCheck(bool (*check)(void*), void* context) {
+        recording_check = check;
+        recording_check_context = context;
+    }
+
     /// Returns the current render state.
     const RenderState& GetRenderState() const {
         return render_state;
@@ -955,6 +962,11 @@ private:
     void BeginRenderingCommand(vk::CommandBuffer cmdbuf, const vk::RenderingInfo& info);
     void EndRenderingCommand(vk::CommandBuffer cmdbuf);
     static void ReportUnbalancedRendering(const char* what);
+    void ReportRenderingThread(const char* what, void* caller);
+    /// gow3: SetRecordingCheck(); true while the calling thread must not record.
+    bool (*recording_check)(void*) = nullptr;
+    void* recording_check_context = nullptr;
+    void CheckRecordingThread(const char* what, void* caller);
     u64 host_copies_issued = 0;
     std::atomic<u64> host_copies_done{0};
     std::atomic<u64> deferred_signals_issued{0}; ///< by the thread recording (A or B)

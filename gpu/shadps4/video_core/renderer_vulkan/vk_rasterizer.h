@@ -216,6 +216,8 @@ private:
     static bool DrawPipeWanted();
     bool UseDrawPipe() const;
     bool OnStageA() const;
+    /// Scheduler::SetRecordingCheck: the GPU command thread records before stage B ran dry.
+    static bool StageARecordsEarly(void* context);
     /// Arguments of an indirect draw: `args` holds `max_count` commands `stride` apart.
     struct IndirectDraw {
         VAddr args;
