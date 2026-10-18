@@ -43,8 +43,8 @@ APP_NAME = 'Gravity Rush'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 # This build. A release package's launcher looks for a newer release on GitHub when it opens
-# (Advanced > Updates) and installs it when the player agrees. Every release so far is a preview,
-# so pre-releases count. Tests: GR_UPDATE_API serves another release list, GR_UPDATE_TEST_FROM
+# (Advanced > Updates) and installs it when the player agrees. Pre-releases count too (the first
+# releases were previews). Tests: GR_UPDATE_API serves another release list, GR_UPDATE_TEST_FROM
 # makes this build compare as an older version.
 VERSION = '0.1.2'
 RELEASES_API = os.environ.get('GR_UPDATE_API') or \

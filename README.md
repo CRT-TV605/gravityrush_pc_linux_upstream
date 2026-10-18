@@ -20,11 +20,11 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: public preview (0.1.2) — the opening, the first episode and the city work,
+**Status: version 0.1.2, the first official release — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
-**[Download the latest preview](https://github.com/LucaPazienza/gravityrush_pc/releases)** —
-see [Playing the preview](#playing-the-preview) below.
+**[Download the latest release](https://github.com/LucaPazienza/gravityrush_pc/releases/latest)** —
+see [Playing](#playing) below.
 
 Tested on Windows 11 with an NVIDIA RTX 5070 Ti, an Xbox One controller and a DualSense.
 
@@ -69,6 +69,7 @@ Not done yet / known gaps:
 - [x] Launcher
 - [x] Render resolution up to 4K, high-quality shadows
 - [x] First preview release
+- [x] First official release (0.1.2), with automatic updates
 - [ ] Play through the whole story and fix what breaks
 - [ ] NGS2 effects (reverb, filters)
 - [ ] Performance and stability work
@@ -81,7 +82,7 @@ Not done yet / known gaps:
   (eboot.bin, sce_module, sce_sys) that you prepare with your own tools. Tested with the European
   release CUSA01113, version 01.00; the resolution and shadow patches only apply to that version.
 
-## Playing the preview
+## Playing
 
 1. Download the Windows zip from [Releases](https://github.com/LucaPazienza/gravityrush_pc/releases)
    and extract it anywhere (not inside the zip).

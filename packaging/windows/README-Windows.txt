@@ -1,8 +1,8 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.2 (preview)
-===============================================================
+Gravity Rush Remastered (PS4) for PC - version 0.1.2
+====================================================
 
 A native PC port: the game's own code runs on your processor, with no emulator. This is an early
-preview: the opening, the first episode and the city of Hekseville have been played through on
+version: the opening, the first episode and the city of Hekseville have been played through on
 one PC; later parts of the game have not been tested yet.
 
 No game files are included. You need your own copy of Gravity Rush Remastered (PS4), as an
