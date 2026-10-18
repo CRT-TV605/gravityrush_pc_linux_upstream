@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <condition_variable>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <optional>
 #include <string_view>
 
@@ -188,9 +192,31 @@ void Dlss::Initialize(vk::Instance instance, vk::PhysicalDevice physical, vk::De
         return;
     }
     impl->initialized = true;
-    if (!impl->api->Initialize(instance, physical, device,
-                               VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
-                               VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr)) {
+    // gow3: NGX's start-up sometimes never returned (the game then stayed on a black screen).
+    // It runs on its own thread; after 8 s the game goes on without DLSS (FSR 3.1 instead).
+    struct Start {
+        std::mutex mutex;
+        std::condition_variable done_cv;
+        bool done = false, ok = false;
+    };
+    auto start = std::make_shared<Start>();
+    const auto* api = impl->api;
+    const auto get_instance = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr;
+    const auto get_device = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr;
+    std::thread([start, api, instance, physical, device, get_instance, get_device] {
+        const bool ok = api->Initialize(instance, physical, device, get_instance, get_device);
+        std::scoped_lock lock{start->mutex};
+        start->ok = ok;
+        start->done = true;
+        start->done_cv.notify_all();
+    }).detach();
+    {
+        std::unique_lock lock{start->mutex};
+        if (!start->done_cv.wait_for(lock, std::chrono::seconds(8), [&] { return start->done; })) {
+            return impl->Disable("NVIDIA NGX did not start within 8 seconds (FSR 3.1 is used)");
+        }
+    }
+    if (!start->ok) {
         return impl->Disable("NVIDIA NGX initialization failed (update the GPU driver)");
     }
     impl->available = true;

@@ -59,6 +59,9 @@ Scheduler::~Scheduler() {
 
 #ifdef _WIN32
 extern "C" const char __ImageBase;
+extern "C" __declspec(dllimport) unsigned short __stdcall RtlCaptureStackBackTrace(
+    unsigned long frames_to_skip, unsigned long frames_to_capture, void** back_trace,
+    unsigned long* back_trace_hash);
 #endif
 
 // gow3: the GPU thread drives the scheduler; a BeginRendering/EndRendering on another thread
@@ -102,9 +105,20 @@ void Scheduler::CheckRecordingThread(const char* what, void* caller) {
 #else
     const uintptr_t base = 0;
 #endif
-    std::printf("Scheduler: %s on '%s' while the draw recording thread runs (caller exe+0x%llx)\n",
+    std::printf("Scheduler: %s on '%s' while the draw recording thread runs (caller exe+0x%llx)",
                 what, Common::GetCurrentThreadName().c_str(),
                 static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(caller) - base));
+#ifdef _WIN32
+    // The callers further up (exe offsets; llvm-symbolizer names them).
+    void* frames[12]{};
+    const unsigned count = RtlCaptureStackBackTrace(1, 12, frames, nullptr);
+    std::printf(", stack");
+    for (unsigned i = 0; i < count; ++i) {
+        std::printf(" +0x%llx",
+                    static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(frames[i]) - base));
+    }
+#endif
+    std::printf("\n");
     std::fflush(stdout);
 }
 
