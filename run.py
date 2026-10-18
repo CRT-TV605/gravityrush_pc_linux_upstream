@@ -185,9 +185,8 @@ def main():
             env.setdefault('GOW3_WINDOW_ICON', str(out / 'window_icon.bmp'))
         except (ImportError, OSError):
             pass
-        # The temporal upscalers and motion vectors are not calibrated for this game yet; linear
-        # image readbacks fix its corrupted textures.
-        env.setdefault('GOW3_UPSCALER', 'none')
+        # Linear image readbacks fix its corrupted textures. (The temporal AA follows
+        # gravityrush.ini's upscaler; GOW3_UPSCALER=none leaves it out entirely.)
         env.setdefault('GOW3_READBACK_LINEAR', '1')
         if patched:
             # The patch notes give the direct memory and VBlank rate the selected patches need.

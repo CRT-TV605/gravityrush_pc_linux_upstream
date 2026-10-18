@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// gow3: Gravity Rush's upscaled frame (vk_temporal_upscaler.cpp, Gravity Rush upscaling). The
+// game draws its HUD into the display buffer after the tonemap; the upscaler enlarged the frame
+// as it was before the HUD. Where the finished frame differs from that one (the HUD, text,
+// menus drawn over the scene) it is shown, enlarged with bilinear filtering; elsewhere the
+// upscaled scene. All values are compared and written sRGB-encoded, as displayed.
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D final_tex; // finished frame, render size
+layout(binding = 1) uniform sampler2D scene_tex; // the frame before the HUD, render size (UNORM)
+layout(binding = 2, rgba8) uniform readonly image2D upscaled_img; // output size
+layout(binding = 3, rgba8) uniform writeonly image2D out_img;     // output size
+
+layout(push_constant) uniform Params {
+    float gain;         // a difference of 1 / gain shows the finished frame fully
+    uint debug;         // 1: the HUD mask in red
+    uint finished_srgb; // final_tex is an sRGB view (decoded to linear when read)
+    uint pad;
+};
+
+vec3 Encode(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+
+vec3 Finished(vec3 c) {
+    return finished_srgb != 0u ? Encode(c) : c;
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 out_size = imageSize(out_img);
+    if (any(greaterThanEqual(pixel, out_size))) {
+        return;
+    }
+    const ivec2 in_size = textureSize(final_tex, 0);
+    const vec2 uv = (vec2(pixel) + 0.5) / vec2(out_size);
+    // The HUD mask from exact texels (filtering in different color spaces would mark scene edges),
+    // interpolated between the four nearest ones.
+    const vec2 source = uv * vec2(in_size) - 0.5;
+    const ivec2 base = ivec2(floor(source));
+    const vec2 f = source - vec2(base);
+    float hud = 0.0;
+    for (int j = 0; j < 2; ++j) {
+        for (int i = 0; i < 2; ++i) {
+            const ivec2 p = clamp(base + ivec2(i, j), ivec2(0), in_size - 1);
+            const vec3 d = abs(Finished(texelFetch(final_tex, p, 0).rgb) - texelFetch(scene_tex, p, 0).rgb);
+            const float weight = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+            hud += clamp(max(d.r, max(d.g, d.b)) * gain, 0.0, 1.0) * weight;
+        }
+    }
+    const vec3 finished = Finished(textureLod(final_tex, uv, 0.0).rgb);
+    vec3 color = mix(imageLoad(upscaled_img, pixel).rgb, finished, hud);
+    if (debug == 1u) {
+        color = mix(color * 0.5, vec3(1.0, 0.0, 0.0), hud * 0.6);
+    }
+    imageStore(out_img, pixel, vec4(color, 1.0));
+}

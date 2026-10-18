@@ -456,7 +456,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     vk::Extent2D image_size{};
     if (upscaled) {
         const auto device = instance.GetDevice();
+        // The port's image may also be a storage image (written through a UNORM view): this
+        // view only samples.
+        const vk::ImageViewUsageCreateInfo sampled_only{.usage = vk::ImageUsageFlagBits::eSampled};
         image_view = Check(device.createImageView({
+            .pNext = &sampled_only,
             .image = display.image,
             .viewType = vk::ImageViewType::e2D,
             .format = view_info.format,

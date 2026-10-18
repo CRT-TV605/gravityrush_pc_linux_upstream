@@ -393,7 +393,21 @@ void ImageTab() {
     const bool rcas_blocked = s.rcas && !s.rcas_applied;
     ImGui::SeparatorText("Anti-aliasing, scaling and sharpening");
     if (BeginRows("##scaling")) {
-        CheckRow("Anti-aliasing (FXAA)", s.fxaa, "The game's own edge smoothing, as on the PS4. Off: sharper, with jagged edges.");
+        // The temporal pass runs on the scene before the tonemap; the game's FXAA is left out
+        // while it does. DLAA needs gow3_dlss.dll and NVIDIA's nvngx_dlss.dll.
+        static const char* const temporal_labels[] = {"Off", "TAA", "FSR 3.1", "DLAA (DLSS)"};
+        static const int temporal_values[] = {Gow3Settings::UpscalerOff, Gow3Settings::UpscalerTaa,
+                                              Gow3Settings::UpscalerFsr3, Gow3Settings::UpscalerDlss};
+        ChoiceRow("Temporal anti-aliasing", s.upscaler, temporal_labels, temporal_values,
+                  s.dlss_supported ? 4 : 3,
+                  "Smooths edges over several frames, also on thin details FXAA misses. TAA is the "
+                  "lightest; FSR 3.1 keeps more detail. Replaces FXAA while it runs.");
+        ImGui::BeginDisabled(s.upscaler != Gow3Settings::UpscalerOff);
+        CheckRow("Anti-aliasing (FXAA)", s.fxaa,
+                 s.upscaler != Gow3Settings::UpscalerOff
+                     ? "Not used: the temporal anti-aliasing replaces it."
+                     : "The game's own edge smoothing, as on the PS4. Off: sharper, with jagged edges.");
+        ImGui::EndDisabled();
         CheckRow("Upscale with FSR 1", s.fsr1,
                  "Enlarges a smaller game image to the window. For more FPS: Render resolution 720p + FSR 1.");
         ImGui::BeginDisabled(rcas_blocked);

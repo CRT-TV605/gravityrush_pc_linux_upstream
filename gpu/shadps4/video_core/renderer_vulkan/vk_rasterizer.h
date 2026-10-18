@@ -336,6 +336,15 @@ private:
     bool motion_draw = false;
     u64 motion_geometry{};    ///< vertex-stream identity of the current direct draw
     bool gbuffer_draw = false;
+    /// gow3: Gravity Rush's scene camera draw (its vertex shader into the HDR scene color with
+    /// the scene depth): its constants hold the camera; the viewport's y scale, z scale, z offset.
+    bool gr_camera_draw = false;
+    std::array<float, 3> gr_viewport{};
+    /// A Gravity Rush scene camera draw since the last frame start: the game draws its tonemap,
+    /// FXAA and UI into the display buffer in turn, and only the first of those starts a frame.
+    bool gr_scene_since_start = false;
+    bool gr_scene_seen = false; ///< ever (before it, every display draw starts a frame)
+    VAddr gr_depth_address = 0; ///< the scene depth, found again at its first draw of a frame
     std::unique_ptr<TemporalUpscaler> upscaler; // gow3: FSR (docs/upscaler.md)
     std::array<float, 2> draw_jitter{};         ///< viewport offset of the current draw, pixels
     std::array<float, 2> target_scale{1.0f, 1.0f}; ///< pass drawn into the upscaler's output-size images

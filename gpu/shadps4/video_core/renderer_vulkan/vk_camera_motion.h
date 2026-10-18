@@ -61,6 +61,8 @@ public:
     /// Vertical field of view and near/far planes of the current camera.
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;
+    /// Where the depth reaches 1 (a large distance when it never does).
+    [[nodiscard]] float Far() const noexcept;
     // Current projection, previous projection, and row Z of previous-view * inverse-view.
     [[nodiscard]] std::array<std::array<float, 4>, 3> TaaDepthParameters() const noexcept;
 
@@ -71,6 +73,12 @@ public:
 
     /// A bound constant buffer of 864 bytes: checks the scene constant signature.
     void OnConstants(const float* data);
+
+    /// gow3: Gravity Rush's scene camera, in a vertex shader constant buffer of its scene
+    /// draws: the view (world to view, row vectors, view z pointing back) in floats 0-15 and
+    /// the view-projection in 16-31. `yscale`, `zscale`, `zoffset`: the draw's viewport. False
+    /// when the data is not such a camera; the first camera of a frame is kept.
+    bool OnGravityRushCamera(const float* data, float yscale, float zscale, float zoffset);
 
     /// The G-buffer pass (5+ color targets): its depth is the scene depth.
     void OnGBufferPass(VideoCore::ImageId depth);

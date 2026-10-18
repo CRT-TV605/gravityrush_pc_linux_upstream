@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -30,6 +31,52 @@ struct PushConstants {
     std::array<float, 2> previous_jitter;
     u32 mode;
 };
+
+/// Inverse of a 4x4 matrix (rows), Gauss-Jordan with partial pivoting; false when singular.
+bool Invert4(const float* m, std::array<double, 16>& out) {
+    std::array<double, 32> a{};
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            a[r * 8 + c] = m[r * 4 + c];
+        }
+        a[r * 8 + 4 + r] = 1.0;
+    }
+    for (int col = 0; col < 4; ++col) {
+        int pivot = col;
+        for (int r = col + 1; r < 4; ++r) {
+            if (std::abs(a[r * 8 + col]) > std::abs(a[pivot * 8 + col])) {
+                pivot = r;
+            }
+        }
+        if (std::abs(a[pivot * 8 + col]) < 1e-12) {
+            return false;
+        }
+        if (pivot != col) {
+            for (int c = 0; c < 8; ++c) {
+                std::swap(a[col * 8 + c], a[pivot * 8 + c]);
+            }
+        }
+        const double scale = 1.0 / a[col * 8 + col];
+        for (int c = 0; c < 8; ++c) {
+            a[col * 8 + c] *= scale;
+        }
+        for (int r = 0; r < 4; ++r) {
+            const double f = a[r * 8 + col];
+            if (r == col || f == 0.0) {
+                continue;
+            }
+            for (int c = 0; c < 8; ++c) {
+                a[r * 8 + c] -= f * a[col * 8 + c];
+            }
+        }
+    }
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            out[r * 4 + c] = a[r * 8 + 4 + c];
+        }
+    }
+    return true;
+}
 
 /// a * b for 3x4 affine matrices (rows [R | t]).
 std::array<float, 12> Multiply(const std::array<float, 12>& a, const std::array<float, 12>& b) {
@@ -153,12 +200,23 @@ CameraMotion::CameraMotion(const Instance& instance_, Scheduler& scheduler_,
 CameraMotion::~CameraMotion() = default;
 
 float CameraMotion::VerticalFov() const noexcept {
-    return 2.0f * std::atan(1.0f / current.proj[1]);
+    // (y scale is negative for a camera whose clip y points down the image.)
+    return 2.0f * std::atan(1.0f / std::abs(current.proj[1]));
 }
 
 float CameraMotion::Near() const noexcept {
     // depth = zs + zo / z is 0 at the near plane.
     return -current.proj[3] / current.proj[2];
+}
+
+float CameraMotion::Far() const noexcept {
+    // depth = zs + zo / z reaches 1 at z = zo / (1 - zs) when zs > 1 (zo < 0).
+    const float zs = current.proj[2], zo = current.proj[3];
+    const float near_plane = Near();
+    if (zs <= 1.0f + 1e-7f || zo >= 0.0f) {
+        return std::max(near_plane * 2.0f, 100000.0f);
+    }
+    return std::clamp(zo / (1.0f - zs), near_plane * 2.0f, 1000000.0f);
 }
 
 std::array<std::array<float, 4>, 3> CameraMotion::TaaDepthParameters() const noexcept {
@@ -238,6 +296,106 @@ void CameraMotion::OnConstants(const float* data) {
         render_size = size;
     }
     frame_has_camera = true;
+}
+
+bool CameraMotion::OnGravityRushCamera(const float* data, float yscale, float zscale,
+                                       float zoffset) {
+    const float* v = data;       // view = (world, 1) * V
+    const float* vp = data + 16; // clip = (world, 1) * VP
+    // An affine view, and a clip w of minus view z (a perspective camera looking down -z).
+    if (v[3] != 0.0f || v[7] != 0.0f || v[11] != 0.0f || v[15] != 1.0f) {
+        return false;
+    }
+    for (int r = 0; r < 4; ++r) {
+        const float z = v[r * 4 + 2];
+        if (std::abs(vp[r * 4 + 3] + z) > 1e-3f * (1.0f + std::abs(z))) {
+            return false;
+        }
+    }
+    if (frame_has_camera) {
+        return true; // the first one of a frame is the main camera
+    }
+    std::array<double, 16> inv{};
+    if (!Invert4(v, inv)) {
+        return false;
+    }
+    // The projection alone: P = inverse(V) * VP.
+    std::array<double, 16> p{};
+    for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            double sum = 0.0;
+            for (int k = 0; k < 4; ++k) {
+                sum += inv[r * 4 + k] * vp[k * 4 + c];
+            }
+            p[r * 4 + c] = sum;
+        }
+    }
+    // The shader's view space looks down +z (z' = -z, w = z'): flip z.
+    const std::array<float, 3> flip{1.0f, 1.0f, -1.0f};
+    const double w_scale = -p[2 * 4 + 3];
+    if (!(w_scale > 0.0)) {
+        return false;
+    }
+    previous = current;
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            current.view[r * 4 + c] = flip[r] * v[c * 4 + r];
+            current.inv_view[r * 4 + c] = float(inv[c * 4 + r]) * flip[c];
+        }
+        current.view[r * 4 + 3] = flip[r] * v[3 * 4 + r];
+        current.inv_view[r * 4 + 3] = float(inv[3 * 4 + r]);
+    }
+    // NDC z = -p22 / w + p32 / w / z'; the viewport maps it to depth = zoffset + zscale * z.
+    // The shader takes y up the image: a viewport not flipping y (yscale > 0) flips the camera.
+    const double ndc_zs = -p[2 * 4 + 2] / w_scale, ndc_zo = p[3 * 4 + 2] / w_scale;
+    current.proj = {float(p[0] / w_scale), float((yscale < 0.0f ? 1.0 : -1.0) * p[5] / w_scale),
+                    float(zoffset + zscale * ndc_zs), float(zscale * ndc_zo)};
+    current.valid = current.proj[0] != 0.0f && current.proj[1] != 0.0f && current.proj[3] < 0.0f;
+    frame_has_camera = true;
+    if (previous.valid && current.valid) {
+        // A camera cut (a new shot in a cutscene, a teleport): the last frame does not apply.
+        // Gravity shifts roll the camera fast, but well under 45 degrees a frame.
+        float moved = 0.0f, facing = 0.0f;
+        for (int r = 0; r < 3; ++r) {
+            const float d = current.inv_view[r * 4 + 3] - previous.inv_view[r * 4 + 3];
+            moved += d * d;
+            facing += current.inv_view[r * 4 + 2] * previous.inv_view[r * 4 + 2];
+        }
+        if (moved > 20.0f * 20.0f || facing < 0.7f) {
+            previous.valid = false;
+        }
+    }
+    static u32 log_counter = 0;
+    if (log_counter++ % 1800 == 0) {
+        // Self-check: a point 3 right, 2 up and 10 ahead of the camera, through the game's
+        // view-projection and through ours (y up the image, depth after the viewport).
+        const std::array<float, 3> local{3.0f, 2.0f, 10.0f};
+        std::array<float, 3> world{};
+        for (int r = 0; r < 3; ++r) {
+            world[r] = current.inv_view[r * 4 + 3];
+            for (int c = 0; c < 3; ++c) {
+                world[r] += current.inv_view[r * 4 + c] * local[c];
+            }
+        }
+        std::array<float, 4> clip{};
+        for (int c = 0; c < 4; ++c) {
+            clip[c] = vp[12 + c];
+            for (int r = 0; r < 3; ++r) {
+                clip[c] += world[r] * vp[r * 4 + c];
+            }
+        }
+        const float game_y = (yscale < 0.0f ? 1.0f : -1.0f) * clip[1] / clip[3];
+        std::printf("Camera motion: Gravity Rush camera proj %g %g %g %g (near %g, far %g, "
+                    "off-centre %g %g, viewport y %g z %g+%g) at %g %g %g; check x %g/%g "
+                    "y %g/%g depth %g/%g\n",
+                    current.proj[0], current.proj[1], current.proj[2], current.proj[3], Near(),
+                    Far(), p[2 * 4 + 0], p[2 * 4 + 1], yscale, zoffset, zscale,
+                    current.inv_view[3], current.inv_view[7], current.inv_view[11],
+                    clip[0] / clip[3], local[0] * current.proj[0] / local[2], game_y,
+                    local[1] * current.proj[1] / local[2],
+                    zoffset + zscale * clip[2] / clip[3], current.proj[2] + current.proj[3] / local[2]);
+    }
+    return true;
 }
 
 void CameraMotion::OnGBufferPass(VideoCore::ImageId depth) {

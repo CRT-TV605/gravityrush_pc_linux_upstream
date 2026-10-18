@@ -272,6 +272,37 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
     if (gbuffer_draw) {
         camera_motion->OnGBufferPass(db_desc.first);
     }
+    // gow3: Gravity Rush's scene: its camera's vertex shader drawing into an RGBA16F target with
+    // a depth of the same size. That depth is the scene depth from its first draw of the next
+    // frame on (the clear and the depth prepass, jittered like the scene).
+    gr_camera_draw = false;
+    if (camera_motion->Enabled() && upscaler->GravityRush() && db_desc.first) {
+        static constexpr u64 GrCameraVs = 0xdbb08a76;
+        const auto& depth = texture_cache.GetImage(db_desc.first);
+        if (!camera_motion->Depth() && gr_depth_address &&
+            depth.info.guest_address == gr_depth_address) {
+            camera_motion->OnGBufferPass(db_desc.first);
+        }
+        if (cb_descs[0].first && std::popcount(key.mrt_mask) == 1 &&
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash == GrCameraVs) {
+            const auto& color = texture_cache.GetImage(cb_descs[0].first);
+            if (color.info.pixel_format == vk::Format::eR16G16B16A16Sfloat &&
+                color.info.size.width == depth.info.size.width &&
+                color.info.size.height == depth.info.size.height) {
+                gr_camera_draw = true;
+                gr_scene_since_start = gr_scene_seen = true;
+                gr_depth_address = depth.info.guest_address;
+                if (camera_motion->Depth() != db_desc.first) {
+                    camera_motion->OnGBufferPass(db_desc.first);
+                }
+                const auto& vp = regs.viewports[0];
+                const auto& vp_ctl = regs.viewport_control;
+                gr_viewport = {vp_ctl.yscale_enable ? vp.yscale : 1.0f,
+                               vp_ctl.zscale_enable ? vp.zscale : 1.0f,
+                               vp_ctl.zoffset_enable ? vp.zoffset : 0.0f};
+            }
+        }
+    }
     if (upscaler->Enabled() && cb_descs[0].first) {
         upscaler->OnColorTarget(cb_descs[0].first);
     }
@@ -962,10 +993,14 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         FrameCapture::Poll();
         scheduler.PopPendingOperations();
     }
+    // gow3: Gravity Rush upscaling: the tonemap was the last draw, its frame is upscaled first.
+    if (upscaler->UpscalePending()) {
+        upscaler->FinishUpscale();
+    }
     // gow3: Gravity Rush's own FXAA, a luma pass and then the filter into the display buffer, is
-    // left out when anti-aliasing is off (gravityrush.ini fxaa=0, live from the in-game menu):
-    // the display buffer keeps the tonemapped frame drawn just before it.
-    if (!Gow3Settings::Get().fxaa.load(std::memory_order_relaxed)) {
+    // left out when anti-aliasing is off (gravityrush.ini fxaa=0, live from the in-game menu) or
+    // the frame went through the temporal AA: the display buffer keeps the tonemapped frame.
+    if (!Gow3Settings::Get().fxaa.load(std::memory_order_relaxed) || upscaler->AppliedLastFrame()) {
         static constexpr u64 game_fxaa[] = {0x8c2537d0, 0x634c42fb};
         if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
             ps && std::ranges::find(game_fxaa, ps->pgm_hash) != std::end(game_fxaa)) {
@@ -974,9 +1009,17 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     const auto& regs = Regs();
     // gow3: the pass copying a finished frame to a display buffer; the previous draw's
-    // target is that frame.
-    if (camera_motion->Enabled() && regs.color_buffers[0] &&
-        FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address())) {
+    // target is that frame. Gravity Rush draws its tonemap, FXAA and UI into the display buffer
+    // in turn: once its scene is known, only the first display draw after the scene starts a
+    // frame, and the scene's temporal pass runs before it (the tonemap reads the scene color).
+    const bool display_draw = camera_motion->Enabled() && regs.color_buffers[0] &&
+                              FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address());
+    const bool tonemap_draw = display_draw && gr_scene_since_start;
+    if (tonemap_draw) {
+        upscaler->OnSceneEnd();
+    }
+    if (display_draw && (gr_scene_since_start || !gr_scene_seen)) {
+        gr_scene_since_start = false;
         scene_started = false;
         camera_motion->OnDisplayPass(cb_descs[0].first);
         if (upscaler->OnFrameStart()) {
@@ -995,6 +1038,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
+    if (tonemap_draw) {
+        upscaler->OnTonemapTarget(cb_descs[0].first);
+    }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
@@ -1320,6 +1366,10 @@ void Rasterizer::DispatchDirect() {
 void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     FrameCapture::Poll();
     gbuffer_draw = false;
+    gr_camera_draw = false;
+    if (upscaler->UpscalePending()) {
+        upscaler->FinishUpscale();
+    }
 
     scheduler.PopPendingOperations();
 
@@ -1571,9 +1621,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     // size; the temporal upscaler restores the detail of the output's mip level (FSR guide:
     // log2(render / output)). Shadows, post-processing and UI keep the guest's bias.
     sampler_lod_bias = 0.0f;
+    const bool gr_scene = upscaler->GravityRush() && db_desc.first &&
+                          db_desc.first == camera_motion->Depth();
     if (!pipeline->IsCompute() && !Gow3Toggle::Disabled(Gow3Toggle::SceneMipBias) &&
-        std::popcount(static_cast<const GraphicsPipeline*>(pipeline)->GetGraphicsKey().mrt_mask &
-                      0xff) >= 5) {
+        (gr_scene || std::popcount(static_cast<const GraphicsPipeline*>(pipeline)
+                                       ->GetGraphicsKey().mrt_mask & 0xff) >= 5)) {
         sampler_lod_bias = upscaler->SceneMipBias();
         static float reported = 0.0f;
         if (sampler_lod_bias != reported) {
@@ -2115,6 +2167,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     memory->IsValidGpuMapping(ring->address, 0)) {
                     camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address));
                 }
+                if (ring->size == 224 && gr_camera_draw &&
+                    stage.sw_stage == Shader::SwStage::Vertex) {
+                    camera_motion->OnGravityRushCamera(
+                        reinterpret_cast<const float*>(constant_ring->Data(ring->offset)),
+                        gr_viewport[0], gr_viewport[1], gr_viewport[2]);
+                }
                 push_data.AddOffset(binding.buffer, 0);
             }
             buffer_infos.emplace_back(constant_ring->Handle(), ring->offset, ring->size);
@@ -2175,6 +2233,13 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
             if (vsharp.GetSize() == 864 && gbuffer_draw &&
                 memory->IsValidGpuMapping(vsharp.base_address, 0)) {
                 camera_motion->OnConstants(reinterpret_cast<const float*>(vsharp.base_address));
+            }
+            if (vsharp.GetSize() == 224 && gr_camera_draw &&
+                stage.sw_stage == Shader::SwStage::Vertex &&
+                memory->IsValidGpuMapping(vsharp.base_address, 0)) {
+                camera_motion->OnGravityRushCamera(
+                    reinterpret_cast<const float*>(vsharp.base_address), gr_viewport[0],
+                    gr_viewport[1], gr_viewport[2]);
             }
             // Object motion research: the vertex shader buffers of G-buffer draws.
             if (FrameCapture::Active() && gbuffer_draw && stage.sw_stage == Shader::SwStage::Vertex &&

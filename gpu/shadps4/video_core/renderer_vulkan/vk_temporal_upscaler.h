@@ -64,6 +64,27 @@ public:
     /// Before a compute dispatch: the post-processing combine shader triggers the upscale.
     void OnDispatch(u64 cs_hash);
 
+    /// gow3: Gravity Rush (default; GOW3_UPSCALER_GOW3=1 restores God of War III's placement):
+    /// temporal AA at the game's own render size on the HDR scene color, no scaled presets.
+    [[nodiscard]] bool GravityRush() const noexcept {
+        return gravity_rush;
+    }
+    /// Gravity Rush: the scene is finished (the first display-buffer draw of a frame, the
+    /// tonemap that reads the scene color): the temporal pass runs now.
+    void OnSceneEnd();
+    /// The previous frame's scene went through the temporal pass: the game's FXAA is left out.
+    [[nodiscard]] bool AppliedLastFrame() const noexcept {
+        return applied_last_frame;
+    }
+    /// Gravity Rush upscaling: the tonemap draw's target (a display buffer), once OnSceneEnd
+    /// chose to upscale this frame.
+    void OnTonemapTarget(VideoCore::ImageId display);
+    /// The tonemap was recorded: the next draw or dispatch first upscales the frame.
+    [[nodiscard]] bool UpscalePending() const noexcept {
+        return scaled_state == ScaledState::Recorded;
+    }
+    void FinishUpscale();
+
     /// Start of a frame in the command stream (display pass).
     bool OnFrameStart();
     bool RasterScaling() const;
@@ -171,7 +192,7 @@ private:
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
     bool RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
                     const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh, float frame_ms,
-                    bool hdr);
+                    bool hdr, const Dlss::Resource* output = nullptr);
     /// Records FSR 4 into output_image; on a permanent failure FSR 3 takes over.
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
@@ -194,6 +215,54 @@ private:
 
     bool enabled = false;
     bool failed = false;
+    bool gravity_rush = true;
+    bool applied_last_frame = false;
+    bool reported_input = false; ///< a scene color the pass cannot use was reported
+
+    // Gravity Rush upscaling (FSR 3.1 or DLSS, the window larger than the game's image): the
+    // motion vectors at the scene's end, the upscale of the tonemapped frame right after the
+    // tonemap, and the HUD composed over it when the frame is shown (DisplayOverride).
+    enum class ScaledState { Idle, WaitTonemap, Recorded };
+    /// The output size for a `w` x `h` scene: the window's, keeping the scene's aspect, at most 3x.
+    bool UpscaleSize(u32 w, u32 h, u32& ow, u32& oh) const;
+    bool StartUpscale(u32 w, u32 h, u32 ow, u32 oh);
+    bool EnsureComposeResources(u32 w, u32 h, u32 ow, u32 oh, vk::Format format);
+    /// One per display buffer: the game may flip a buffer after the next frame was already
+    /// tonemapped into another one (the GPU thread runs ahead), so each keeps its own frame.
+    struct UpscaledBuffer {
+        VAddr address = 0;
+        VideoCore::ImageId display{};
+        bool valid = false; ///< holds the upscale of the frame last tonemapped into `address`
+        u64 used = 0;       ///< FinishUpscale serial (replacement order)
+        VideoCore::UniqueImage pre_hud; ///< the frame before the HUD, render size
+        vk::UniqueImageView pre_hud_view; ///< UNORM: sRGB-encoded values
+        VideoCore::UniqueImage upscaled; ///< the upscaler's output, output size, UNORM
+        vk::UniqueImageView upscaled_view;
+        VideoCore::UniqueImage composed; ///< the frame shown, output size, UNORM
+        vk::UniqueImageView composed_view;
+    };
+    UpscaledBuffer& BufferFor(VAddr address);
+    bool ComposeUpscaled(UpscaledBuffer& buffer, Display& display);
+    ScaledState scaled_state = ScaledState::Idle;
+    struct UpscaleFrame {
+        VideoCore::ImageId display{}, depth{};
+        u32 width = 0, height = 0, out_width = 0, out_height = 0;
+        std::array<float, 2> jitter{};
+        float near_plane = 0.0f, far_plane = 0.0f, fov = 0.0f, frame_ms = 16.6f;
+        bool reset = false;
+        VAddr address = 0;
+    } upscale_frame;
+    bool reported_display = false;
+    float upscale_bias = 0.0f;  ///< scene texture LOD bias while upscaling
+    u32 jitter_render_width = 0, jitter_output_width = 0;
+    std::array<UpscaledBuffer, 3> upscaled_buffers;
+    u64 upscale_serial = 0;
+    vk::Format compose_format = vk::Format::eUndefined;
+    u32 pre_hud_width = 0, pre_hud_height = 0, compose_width = 0, compose_height = 0;
+    vk::UniqueSampler compose_sampler;
+    vk::UniqueDescriptorSetLayout compose_desc_layout;
+    vk::UniquePipelineLayout compose_pipeline_layout;
+    vk::UniquePipeline compose_pipeline;
     u64 trigger_hash = 0x9a9cf8a9;
     VideoCore::ImageId scene_color{};
     bool done_this_frame = false;
