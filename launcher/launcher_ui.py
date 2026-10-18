@@ -334,6 +334,16 @@ _ROWS = [
     ('This folder is read-only, so the launcher cannot update itself here. Download the new version from the releases page.', 'Questa cartella è in sola lettura: il launcher non può aggiornarsi qui. Scarica la nuova versione dalla pagina delle release.', 'Ce dossier est en lecture seule : le lanceur ne peut pas se mettre à jour ici. Téléchargez la nouvelle version depuis la page des versions.', 'Dieser Ordner ist schreibgeschützt, daher kann sich der Launcher hier nicht aktualisieren. Lade die neue Version von der Release-Seite herunter.', 'Esta carpeta es de solo lectura, así que el lanzador no puede actualizarse aquí. Descarga la nueva versión desde la página de versiones.'),
     ('Open the page', 'Apri la pagina', 'Ouvrir la page', 'Seite öffnen', 'Abrir la página'),
     ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
+    # Video page: per-mode anti-aliasing hints, sections, footer note.
+    ("FXAA: the game's own edge smoothing, as on the PS4. The lightest.", 'FXAA: lo smussamento dei bordi del gioco, come su PS4. Il più leggero.', 'FXAA : le lissage des contours du jeu, comme sur PS4. Le plus léger.', 'FXAA: die spieleigene Kantenglättung, wie auf der PS4. Am leichtesten.', 'FXAA: el suavizado de bordes del propio juego, como en PS4. El más ligero.'),
+    ('TAA: smooths edges over several frames, steadier than FXAA, a little softer.', 'TAA: smussa i bordi su più fotogrammi, più stabile di FXAA, un po’ più morbido.', 'TAA : lisse les contours sur plusieurs images, plus stable que FXAA, un peu plus doux.', 'TAA: glättet Kanten über mehrere Bilder, ruhiger als FXAA, etwas weicher.', 'TAA: suaviza los bordes a lo largo de varios fotogramas, más estable que FXAA, algo más suave.'),
+    ('FSR 3.1: sharp, steady anti-aliasing. With a render resolution below your screen it also enlarges the image to the screen.', 'FSR 3.1: anti-aliasing nitido e stabile. Con una risoluzione di rendering più bassa dello schermo ingrandisce anche l’immagine fino allo schermo.', 'FSR 3.1 : anticrénelage net et stable. Avec une résolution de rendu inférieure à l’écran, il agrandit aussi l’image jusqu’à l’écran.', 'FSR 3.1: scharfe, ruhige Kantenglättung. Ist die Render-Auflösung niedriger als der Bildschirm, vergrößert es das Bild zusätzlich auf den Bildschirm.', 'FSR 3.1: antialiasing nítido y estable. Con una resolución de renderizado menor que la pantalla, también amplía la imagen hasta la pantalla.'),
+    ('DLSS: NVIDIA’s anti-aliasing for RTX cards. Like FSR 3.1, it enlarges a lower render resolution to the screen.', 'DLSS: l’anti-aliasing di NVIDIA per le schede RTX. Come FSR 3.1, ingrandisce una risoluzione di rendering più bassa fino allo schermo.', 'DLSS : l’anticrénelage de NVIDIA pour les cartes RTX. Comme FSR 3.1, il agrandit une résolution de rendu plus basse jusqu’à l’écran.', 'DLSS: NVIDIAs Kantenglättung für RTX-Karten. Wie FSR 3.1 vergrößert es eine niedrigere Render-Auflösung auf den Bildschirm.', 'DLSS: el antialiasing de NVIDIA para tarjetas RTX. Como FSR 3.1, amplía una resolución de renderizado menor hasta la pantalla.'),
+    ('Off: no smoothing. The sharpest image, with jagged edges.', 'Disattivato: nessuno smussamento. L’immagine più nitida, con bordi seghettati.', 'Désactivé : aucun lissage. L’image la plus nette, avec des bords crénelés.', 'Aus: keine Glättung. Das schärfste Bild, mit gezackten Kanten.', 'Desactivado: sin suavizado. La imagen más nítida, con bordes dentados.'),
+    ('IMAGE QUALITY', 'QUALITÀ DELL’IMMAGINE', 'QUALITÉ D’IMAGE', 'BILDQUALITÄT', 'CALIDAD DE IMAGEN'),
+    ('DETAILS', 'DETTAGLI', 'DÉTAILS', 'DETAILS', 'DETALLES'),
+    ('Saved automatically', 'Salvato automaticamente', 'Enregistré automatiquement', 'Automatisch gespeichert', 'Guardado automáticamente'),
+    ('The size the game draws at. Lower than your screen runs faster.', 'La dimensione a cui il gioco disegna. Più bassa dello schermo va più veloce.', 'La taille à laquelle le jeu dessine. Plus basse que l’écran, c’est plus rapide.', 'Die Größe, in der das Spiel zeichnet. Niedriger als der Bildschirm läuft schneller.', 'El tamaño al que dibuja el juego. Menor que la pantalla va más rápido.'),
     # Inkfall functions: detected game, backups, play time, exit diagnosis.
     ('DETECTED GAME', 'GIOCO RILEVATO', 'JEU DÉTECTÉ', 'ERKANNTES SPIEL', 'JUEGO DETECTADO'),
     ('Title', 'Titolo', 'Titre', 'Titel', 'Título'),
@@ -425,6 +435,7 @@ RESOLUTION_CHOICES = [('native', 'Native (1080p)'), ('720p', '720p (faster)'), (
 # the FXAA while it runs), or none. DLAA only when the DLSS libraries are installed.
 AA_CHOICES = [('fxaa', 'FXAA (as on PS4)'), ('taa', 'TAA'), ('fsr3', 'FSR 3.1'), ('off', 'Off')]
 TEMPORAL_AA = ('taa', 'fsr3', 'dlss')
+AA_HINTS = {'fxaa': "FXAA: the game's own edge smoothing, as on the PS4. The lightest.", 'taa': 'TAA: smooths edges over several frames, steadier than FXAA, a little softer.', 'fsr3': 'FSR 3.1: sharp, steady anti-aliasing. With a render resolution below your screen it also enlarges the image to the screen.', 'dlss': 'DLSS: NVIDIA’s anti-aliasing for RTX cards. Like FSR 3.1, it enlarges a lower render resolution to the screen.', 'off': 'Off: no smoothing. The sharpest image, with jagged edges.'}
 
 
 def dlss_installed():
@@ -1590,6 +1601,8 @@ class LauncherWindow:
         self.tk.Frame(foot, bg=LINE, height=1).pack(fill='x', pady=(self.px(10), self.px(14)))
         row = self.tk.Frame(foot, bg=CARD)
         row.pack(fill='x')
+        self.tk.Label(row, text='✓  ' + t('Saved automatically'), bg=CARD, fg=TEXT3,
+                      font=self.font(12.5)).pack(side='left')
         for text, command, primary in reversed(entries):
             ImageButton(self, row, t(text), command, 'pri' if primary else 'gh').widget.pack(side='right', padx=(self.px(10), 0))
 
@@ -1664,48 +1677,55 @@ class LauncherWindow:
         self.row(body, 'Refresh rate',
                  lambda c: self.choice(c, rates, rate, lambda v: self.set_ini('refresh_rate', v), 16).pack(side='right'),
                  'Used in Fullscreen and Borderless, while the game runs. Windowed keeps the Windows setting.')
-        self.sec(body, 'IMAGE')
+
+        self.sec(body, 'IMAGE QUALITY')
+        aa_choices = AA_CHOICES[:3] + [('dlss', 'DLSS')] + AA_CHOICES[3:] if dlss_installed() else AA_CHOICES
+        mode = aa_mode(self.ini)
+
+        def set_aa(chosen):
+            self.ini['upscaler'] = chosen if chosen in TEMPORAL_AA else 'off'
+            self.ini['fxaa'] = '0' if chosen == 'off' else '1'
+            self.save()
+            self.refresh_status()
+            self.reopen_page()  # the hint and the FSR 1.0 rows follow the mode
+        self.row(body, 'Anti-aliasing',
+                 lambda c: Segments(self, c, aa_choices, mode, set_aa).widget.pack(side='right'), AA_HINTS[mode])
         current = self.ini.get('render_resolution', 'native')
         if current not in dict(RESOLUTION_CHOICES):
             current = 'native'
         self.row(body, 'Render resolution',
                  lambda c: self.choice(c, RESOLUTION_CHOICES, current,
                                        lambda v: self.set_ini('render_resolution', v), 16).pack(side='right'),
-                 'The size the game draws at. Lower than your screen runs faster: FSR 3.1 or FSR 1.0 enlarge it to the screen.')
-        aa_choices = AA_CHOICES[:3] + [('dlss', 'DLSS')] + AA_CHOICES[3:] if dlss_installed() else AA_CHOICES
+                 'The size the game draws at. Lower than your screen runs faster.')
+        if mode not in TEMPORAL_AA or mode == 'taa':
+            # FSR 1.0 and its sharpening act only without FSR 3.1 / DLSS (they enlarge on their own).
+            self.row(body, 'Simple upscaler',
+                     lambda c: Segments(self, c, UPSCALER_CHOICES, '1' if self.ini.get('fsr1', '0') == '1' else '0',
+                                        lambda v: self.set_ini('fsr1', v)).widget.pack(side='right'),
+                     'A simple enlargement to your screen when the render resolution is lower, with FXAA or TAA. '
+                     'FSR 3.1 does it with more detail.')
 
-        def set_aa(mode):
-            self.ini['upscaler'] = mode if mode in TEMPORAL_AA else 'off'
-            self.ini['fxaa'] = '0' if mode == 'off' else '1'
-            self.save()
-            self.refresh_status()
-        self.row(body, 'Anti-aliasing',
-                 lambda c: Segments(self, c, aa_choices, aa_mode(self.ini), set_aa).widget.pack(side='right'),
-                 "FXAA is the game's own. TAA and FSR 3.1 smooth edges over several frames: steadier edges and thin details. With a render resolution below your screen, FSR 3.1 also enlarges the image to the screen and keeps the detail.")
-        self.row(body, 'Simple upscaler',
-                 lambda c: Segments(self, c, UPSCALER_CHOICES, '1' if self.ini.get('fsr1', '0') == '1' else '0',
-                                    lambda v: self.set_ini('fsr1', v)).widget.pack(side='right'),
-                 'A simple enlargement to your screen when the render resolution is lower, with FXAA or TAA. FSR 3.1 does it with more detail.')
+            def make_sharpening(control):
+                try:
+                    value = int(self.ini.get('rcas_strength', '75')) if self.ini.get('rcas', '1') == '1' else 0
+                except ValueError:
+                    value = 75
+                shown = self.tk.Label(control, text=f'{value}%', bg=CARD, fg=TEXT2, font=self.font(13.5, 'bold'),
+                                      width=5, anchor='e')
 
-        def make_sharpening(control):
-            try:
-                value = int(self.ini.get('rcas_strength', '75')) if self.ini.get('rcas', '1') == '1' else 0
-            except ValueError:
-                value = 75
-            shown = self.tk.Label(control, text=f'{value}%', bg=CARD, fg=TEXT2, font=self.font(13.5, 'bold'), width=5,
-                                  anchor='e')
+                def changed(v):
+                    v = int(round(v))
+                    shown.configure(text=f'{v}%')
+                    self.ini['rcas'] = '1' if v > 0 else '0'
+                    if v > 0:
+                        self.ini['rcas_strength'] = str(v)
+                    self.save()
+                Slider(self, control, 0, 100, 5, value, changed).widget.pack(side='left')
+                shown.pack(side='left')
+            self.row(body, 'Sharpening', make_sharpening,
+                     'Sharpens the final image with FSR 1.0, when the game image is smaller than the screen. 0: off.')
 
-            def changed(v):
-                v = int(round(v))
-                shown.configure(text=f'{v}%')
-                self.ini['rcas'] = '1' if v > 0 else '0'
-                if v > 0:
-                    self.ini['rcas_strength'] = str(v)
-                self.save()
-            Slider(self, control, 0, 100, 5, value, changed).widget.pack(side='left')
-            shown.pack(side='left')
-        self.row(body, 'Sharpening', make_sharpening,
-                 'Sharpens the final image with FSR 1.0, when the game image is smaller than the screen. 0: off.')
+        self.sec(body, 'DETAILS')
         shadows = self.ini.get('shadow_quality', 'standard')
         self.row(body, 'Shadow quality',
                  lambda c: self.choice(c, SHADOW_CHOICES, shadows if shadows in dict(SHADOW_CHOICES) else 'standard',
@@ -1724,7 +1744,20 @@ class LauncherWindow:
                                                          'fsr1': '0',
                                                          'rcas': '1', 'rcas_strength': '75', 'sharpen': '0'}),
                            False),
-                           ('Apply', self.apply, True)])
+                           ('Close', lambda: self.open_page(None), True)])
+
+    def reopen_page(self):
+        """Draws the open page again at the same scroll position."""
+        try:
+            top = self.body_canvas.yview()[0]
+        except (AttributeError, self.tk.TclError):
+            top = 0.0
+        self.open_page(self.page)
+        try:
+            self.root.update_idletasks()
+            self.body_canvas.yview_moveto(top)
+        except (AttributeError, self.tk.TclError):
+            pass
 
     def page_controls(self, body, foot):
         tk, logic = self.tk, self.logic
@@ -1764,7 +1797,7 @@ class LauncherWindow:
                 chip = ImageButton(self, line, keys.get(button) or default_key, None, 'chip')
                 chip.command = lambda b=button, c=chip: self.start_capture(b, c)
                 chip.widget.place(x=self.px(480), rely=.5, anchor='w')
-        self.footer(foot, [('Reset', self.reset_controls, False), ('Apply', self.apply, True)])
+        self.footer(foot, [('Reset', self.reset_controls, False), ('Close', lambda: self.open_page(None), True)])
 
     def page_advanced(self, body, foot):
         self.sec(body, 'LAUNCHER', first=True)
@@ -1806,7 +1839,7 @@ class LauncherWindow:
         self.row(body, 'Launcher data folder', lambda c: ImageButton(self, c, t('Open'), lambda: self.open_path(
             str(self.logic.CONFIG_DIR))).widget.pack(side='right'))
         self.buttons(body, [('Export settings', self.export_settings), ('Import settings', self.import_settings)])
-        self.footer(foot, [('Reset all', self.reset_all, False), ('Apply', self.apply, True)])
+        self.footer(foot, [('Reset all', self.reset_all, False), ('Close', lambda: self.open_page(None), True)])
 
     def page_log(self, body, foot):
         tk = self.tk
