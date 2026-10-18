@@ -73,6 +73,7 @@
             <Line Type="bytes" Address="0x01ab25c0" Value="610bb63a"/>
             <Line Type="bytes" Address="0x01ab2ae4" Value="cdcc4c3a"/>
             <Line Type="bytes" Address="0x01ab2aec" Value="610bb63a"/>
+            <Line Type="bytes" Address="0x0143fab0" Value="abaaaa3f6969a93fabaaaa3f6969a93f"/>
         </PatchList>
     </Metadata>
     <Metadata Title="Gravity Rush Remastered" Name="Resolution Patch - 1440p" Note="Renders at 2560x1440." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
@@ -143,6 +144,7 @@
             <Line Type="bytes" Address="0x01ab25c0" Value="610b363a"/>
             <Line Type="bytes" Address="0x01ab2ae4" Value="cdcccc39"/>
             <Line Type="bytes" Address="0x01ab2aec" Value="610b363a"/>
+            <Line Type="bytes" Address="0x0143fab0" Value="abaa2a4069692940abaa2a4069692940"/>
         </PatchList>
     </Metadata>
     <Metadata Title="Gravity Rush Remastered" Name="Resolution Patch - 1800p" Note="Renders at 3200x1800." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
@@ -213,6 +215,7 @@
             <Line Type="bytes" Address="0x01ab25c0" Value="b4a2113a"/>
             <Line Type="bytes" Address="0x01ab2ae4" Value="0ad7a339"/>
             <Line Type="bytes" Address="0x01ab2aec" Value="b4a2113a"/>
+            <Line Type="bytes" Address="0x0143fab0" Value="55555540c4c3534055555540c4c35340"/>
         </PatchList>
     </Metadata>
     <Metadata Title="Gravity Rush Remastered" Name="Resolution Patch - 4K" Note="Renders at 3840x2160." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
@@ -283,6 +286,7 @@
             <Line Type="bytes" Address="0x01ab25c0" Value="d6b9f239"/>
             <Line Type="bytes" Address="0x01ab2ae4" Value="89888839"/>
             <Line Type="bytes" Address="0x01ab2aec" Value="d6b9f239"/>
+            <Line Type="bytes" Address="0x0143fab0" Value="000080401e1e7e40000080401e1e7e40"/>
         </PatchList>
     </Metadata>
     <Metadata Title="Gravity Rush Remastered" Name="Shadow Quality - 4096" Note="Shadow map 4096x4096 (the game uses 2048x2048)." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
