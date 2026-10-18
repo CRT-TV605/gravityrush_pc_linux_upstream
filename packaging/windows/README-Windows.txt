@@ -1,4 +1,4 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.3
+Gravity Rush Remastered (PS4) for PC - version 0.1.4
 ====================================================
 
 A native PC port: the game's own code runs on your processor, with no emulator. This is an early
@@ -22,8 +22,11 @@ Start
 4. Press Play.
 
 Graphics (Video page)
-- Render resolution: native 1080p, 720p, 1440p, 1800p or 4K. Above your screen's size it works as
-  anti-aliasing (4K on a 1440p screen gives the cleanest image).
+- Anti-aliasing: FXAA (the game's own, as on the PS4), TAA, FSR 3.1, DLSS (NVIDIA RTX) or off.
+- With FSR 3.1 or DLSS, Mode: Native/DLAA, Quality, Balanced or Performance. Lower modes draw the
+  game below your screen's size and enlarge it to the screen: more FPS, still sharp.
+- With FXAA or TAA, Render resolution: from 540p to 4K. Above your screen's size it works as
+  anti-aliasing; below it, "Simple upscaler" (FSR 1.0) enlarges it.
 - Shadow quality: Standard (the game's 2048) or High (4096).
 - Anisotropic filtering, window mode, refresh rate (fullscreen), vertical sync and FPS limit.
 
@@ -51,8 +54,8 @@ Reporting a problem
 
 Known issues
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- A rare crash in the graphics driver has been seen twice (when a movie started, during a save);
-  0.1.1 guards against its cause. If it happens again, please send user\last_run.log.
+- Occasional small graphics glitches with TAA, FSR 3.1 and DLSS are still being tracked down:
+  press F12 when you see one and send the files.
 - Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
 - Online features (PSN) are not available: the game runs as a console that is not signed in.
 

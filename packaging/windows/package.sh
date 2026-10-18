@@ -5,8 +5,9 @@
 # with PyInstaller so players need no Python), "Gravity Rush.exe" (plays with the saved settings), gravityrush-runtime.exe with the MSYS2 CLANG64 DLLs it needs,
 # the preparation scripts and run.py. Run from an MSYS2 CLANG64 shell after `bash build.sh`.
 # Freezing uses a Windows Python 3.10+ (python.org; WINPYTHON overrides) and a private venv in
-# out/pyenv with PyInstaller. The temporal upscalers are off, so neither the FSR 4 assets nor the
-# DLSS runtime are packaged.
+# out/pyenv with PyInstaller. TAA and FSR 3.1 are built in; DLSS ships when
+# packaging/windows/build_dlss.sh has put gow3_dlss.dll and NVIDIA's nvngx_dlss.dll in out/ (with
+# NVIDIA's license), so players need nothing else. The FSR 4 assets are not packaged.
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
 source ./msys2-env.sh
@@ -77,6 +78,14 @@ cp -r scripts patches "$dest/"
 # No package unpacker in releases: the player prepares the game folder with their own tools.
 rm -f "$dest/scripts/pkg_extract.py" "$dest/scripts/pkg_keys.py"
 cp run.py LICENSE README.md packaging/windows/README-Windows.txt "$dest/"
+# DLSS: the MIT bridge (gpu/dlss_bridge) and NVIDIA's runtime, next to gravityrush-runtime.exe.
+dlss=0
+if [[ -f out/gow3_dlss.dll && -f out/nvngx_dlss.dll && -f out/NVIDIA-DLSS-LICENSE.txt ]]; then
+    cp out/gow3_dlss.dll out/nvngx_dlss.dll "$dest/bin/"
+    dlss=1
+else
+    echo 'DLSS not packaged (run packaging/windows/build_dlss.sh first)' >&2
+fi
 # The licenses of what ships with the port: every MSYS2 package a DLL comes from (its license files
 # and a summary with version and license), and the Python parts frozen into the launcher.
 licenses="$dest/THIRD-PARTY-LICENSES"
@@ -101,13 +110,19 @@ mkdir -p "$licenses"
     echo "The launcher is frozen with PyInstaller (GPL with a bootloader exception) and contains Python"
     echo "(PSF License), Tcl/Tk (BSD-style), Pillow (MIT-CMU) and cryptography (Apache-2.0 / BSD)."
     echo "The launcher font Cabin is under the SIL Open Font License (launcher/fonts/OFL-Cabin.txt)."
+    if [[ $dlss == 1 ]]; then
+        echo
+        echo "bin/nvngx_dlss.dll is NVIDIA DLSS, redistributed under the NVIDIA RTX SDKs license"
+        echo "(NVIDIA-DLSS-LICENSE.txt); bin/gow3_dlss.dll is the port's bridge to it (MIT, gpu/dlss_bridge)."
+    fi
 } > "$licenses/README.txt"
+[[ $dlss == 1 ]] && cp out/NVIDIA-DLSS-LICENSE.txt "$licenses/"
 find "$dest" -name __pycache__ -prune -exec rm -r {} +
 # No game files and nothing a player made (saves, shader caches built from the game's shaders,
 # settings, logs) may ship: stop when one is found.
 forbidden=$(find "$dest" \( -iname eboot.bin -o -iname sce_module -o -iname sce_sys -o -iname savedata \
     -o -iname user -o -iname cache -o -iname '*.log' -o -iname gravityrush.ini -o -iname settings.json \
-    -o -iname mods.json -o -iname patches.json -o -iname fsr4_shaders -o -iname 'nvngx_dlss*.dll' \
+    -o -iname mods.json -o -iname patches.json -o -iname fsr4_shaders \
     -o -iname '*.spv' -o -iname '*.pkg' -o -iname '*.sprx' -o -iname '*.prx' \) -print)
 if [[ -n $forbidden ]]; then
     echo "Package holds files that must not ship:" >&2

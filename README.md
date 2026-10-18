@@ -20,7 +20,7 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: version 0.1.3 — the opening, the first episode and the city work,
+**Status: version 0.1.4 — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
 **[Download the latest release](https://github.com/LucaPazienza/gravityrush_pc/releases/latest)** —
@@ -38,9 +38,11 @@ What works today:
 - **Saves:** the save dialog, autosave, loading and manual saves; backups before every start.
 - **Graphics:** Vulkan through the shadPS4 video core, readable text (font library with FreeType),
   borderless window by default (windowed and fullscreen, with a refresh rate choice).
-  **Render resolution up to 4K** (720p, 1440p, 1800p, 4K) through patches of the game's own
-  sizes and screen-space shader constants, **high-quality shadows** (4096 shadow map) and
-  anisotropic filtering.
+  **Render resolution up to 4K** through patches of the game's own sizes and screen-space shader
+  constants, **high-quality shadows** (4096 shadow map) and anisotropic filtering.
+  **Anti-aliasing and upscaling:** the game's FXAA, TAA, **FSR 3.1** and **DLSS** (NVIDIA RTX), with
+  Native/DLAA, Quality, Balanced and Performance modes that render below the screen and enlarge the
+  image to it, the HUD kept as the game draws it. FSR 1.0 is available as a simple upscaler.
 - **Input:** controllers through SDL3 (Xbox, DualSense and others), keyboard and mouse.
   The touchpad works with real touch ids; the mouse acts as a finger (hold and drag for swipes).
   The **DualSense gyro** steers the gravity camera like on the PS4 (adjustable sensitivity).
@@ -55,8 +57,8 @@ Not done yet / known gaps:
 - Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
   are not modelled: the dry sound plays.
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- A rare crash in the graphics driver (an end of rendering without its begin) has been seen twice;
-  the renderer now drops such a command, and the log says so if it happens again.
+- Occasional small graphics glitches with the temporal upscalers are still being tracked down
+  (F12 captures help).
 - No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap
