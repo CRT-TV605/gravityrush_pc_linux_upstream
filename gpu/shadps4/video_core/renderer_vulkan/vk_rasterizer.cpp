@@ -1163,11 +1163,15 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     pipeline->BindResources(set_writes, push_data);
-    // gow3: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
-    // full-screen quad leaves an edge column unwritten).
+    // gow3: jitter everything drawn with a depth test against the scene depth. Full-screen
+    // passes test nothing (or always pass) and stay put: a shifted full-screen quad leaves an edge
+    // column unwritten. Small draws are not left out: Gravity Rush draws panels and decals as
+    // single quads, and unshifted over shifted surfaces they lost the depth test every few frames
+    // (black flashes on the stalls with TAA, FSR and DLSS).
     draw_jitter = {};
     if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
-        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
+        regs.depth_control.depth_enable &&
+        regs.depth_control.depth_func != AmdGpu::CompareFunc::Always) {
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
