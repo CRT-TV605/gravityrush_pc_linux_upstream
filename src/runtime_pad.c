@@ -433,8 +433,9 @@ static void assign_touch_ids(PadData *d) {
     d->touch_held_time=down_since ? (uint32_t)(d->timestamp-down_since) : 0;
 }
 /* GOW3_MOTION_FAKE=qx,qy,qz,qw[,ax,ay,az]: a fixed orientation (and acceleration in g), and
- * GOW3_MOTION_FAKE_GYRO=wx,wy,wz a fixed angular velocity (rad/s), from GOW3_MOTION_FAKE_AFTER
- * seconds on, with or without a gamepad (diagnostics: what the game does with the motion sensors). */
+ * GOW3_MOTION_FAKE_GYRO=wx,wy,wz a fixed angular velocity (rad/s), integrated into the orientation
+ * when no fixed one is given, from GOW3_MOTION_FAKE_AFTER seconds on, with or without a gamepad
+ * (diagnostics: what the game does with the motion sensors). */
 static void fake_motion(PadData *d) {
     static int parsed, count, gyro_count;
     static float v[7], w[3];
@@ -453,6 +454,20 @@ static void fake_motion(PadData *d) {
     if (count>=4) memcpy(d->orientation,v,4*sizeof(float));
     if (count>=7) memcpy(d->acceleration,v+4,3*sizeof(float));
     if (gyro_count>=3) memcpy(d->angular_velocity,w,3*sizeof(float));
+    if (gyro_count>=3 && count<4) {
+        static float q[4]={0,0,0,1};
+        static uint64_t last;
+        const float dt=last && d->timestamp>last ? (float)(d->timestamp-last)/1e6f : 0.0f;
+        last=d->timestamp;
+        if (dt>0.0f && dt<1.0f) {
+            const float dq[4]={q[3]*w[0]+q[1]*w[2]-q[2]*w[1], q[3]*w[1]+q[2]*w[0]-q[0]*w[2],
+                               q[3]*w[2]+q[0]*w[1]-q[1]*w[0], -q[0]*w[0]-q[1]*w[1]-q[2]*w[2]};
+            for (int i=0;i<4;++i) q[i]+=0.5f*dq[i]*dt;
+            const float n=sqrtf(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);
+            if (n>0.0f) for (int i=0;i<4;++i) q[i]/=n;
+        }
+        memcpy(d->orientation,q,sizeof(q));
+    }
 }
 static void sample(PadData *d) {
     sample_host(d);
