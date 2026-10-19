@@ -153,6 +153,7 @@ FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240
 APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', ''), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '',
+                'prep_workers': '', 'copy_threads': '', 'record_thread': True,
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False, 'f12_quits': False,
                 'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
@@ -332,9 +333,12 @@ def game_environment(s):
         env['GOW3_USER_NAME'] = str(s['player_name']).strip()
     if s['hdr']:
         env['GOW3_HDR'] = '1'
-    for key, name in (('draw_pipe', 'GOW3_DRAW_PIPE'), ('readbacks', 'GOW3_READBACKS')):
-        if s[key]:
-            env[name] = s[key]
+    for key, name in (('draw_pipe', 'GOW3_DRAW_PIPE'), ('readbacks', 'GOW3_READBACKS'),
+                      ('prep_workers', 'GOW3_PREP_WORKERS'), ('copy_threads', 'GOW3_COPY_THREADS')):
+        if str(s.get(key, '')):
+            env[name] = str(s[key])
+    if not s.get('record_thread', True):
+        env['GOW3_VK_RECORD_THREAD'] = '0'
     env['GOW3_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
     env['GOW3_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
     env['GOW3_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'

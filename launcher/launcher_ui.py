@@ -334,6 +334,27 @@ _ROWS = [
     ('This folder is read-only, so the launcher cannot update itself here. Download the new version from the releases page.', 'Questa cartella è in sola lettura: il launcher non può aggiornarsi qui. Scarica la nuova versione dalla pagina delle release.', 'Ce dossier est en lecture seule : le lanceur ne peut pas se mettre à jour ici. Téléchargez la nouvelle version depuis la page des versions.', 'Dieser Ordner ist schreibgeschützt, daher kann sich der Launcher hier nicht aktualisieren. Lade die neue Version von der Release-Seite herunter.', 'Esta carpeta es de solo lectura, así que el lanzador no puede actualizarse aquí. Descarga la nueva versión desde la página de versiones.'),
     ('Open the page', 'Apri la pagina', 'Ouvrir la page', 'Seite öffnen', 'Abrir la página'),
     ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
+    # Advanced: GPU readbacks and threads.
+    ('GPU AND THREADS', 'GPU E THREAD', 'GPU ET THREADS', 'GPU UND THREADS', 'GPU E HILOS'),
+    ('Auto', 'Automatico', 'Auto', 'Automatisch', 'Automático'),
+    ('On', 'Attivo', 'Activé', 'An', 'Activado'),
+    ('Relaxed', 'Rilassate', 'Souples', 'Locker', 'Relajadas'),
+    ('Precise', 'Precise', 'Précises', 'Genau', 'Precisas'),
+    ('GPU readbacks', 'Letture dalla GPU', 'Relectures GPU', 'GPU-Rücklesungen', 'Lecturas de la GPU'),
+    ('How the game reads data the graphics card produced. Auto is recommended. Precise is the most faithful and the slowest; Off is the fastest but lighting or objects may look wrong.', 'Come il gioco legge i dati prodotti dalla scheda video. Automatico è consigliato. Precise è la più fedele e la più lenta; Disattivato è la più veloce, ma luci o oggetti possono apparire sbagliati.', 'Comment le jeu lit les données produites par la carte graphique. Auto est recommandé. Précises est le plus fidèle et le plus lent ; Désactivé est le plus rapide, mais l’éclairage ou des objets peuvent sembler faux.', 'Wie das Spiel Daten liest, die die Grafikkarte erzeugt hat. Automatisch wird empfohlen. Genau ist am originalgetreuesten und am langsamsten; Aus ist am schnellsten, aber Licht oder Objekte können falsch aussehen.', 'Cómo lee el juego los datos que produce la tarjeta gráfica. Se recomienda Automático. Precisas es lo más fiel y lo más lento; Desactivado es lo más rápido, pero la iluminación o los objetos pueden verse mal.'),
+    ('Deferred readbacks', 'Letture differite', 'Relectures différées', 'Verzögerte Rücklesungen', 'Lecturas diferidas'),
+    ('Fewer waits for the graphics card. Switch it off if textures or shadows look wrong. Applied at start.', 'Meno attese della scheda video. Disattivale se texture o ombre appaiono sbagliate. Applicato all’avvio.', 'Moins d’attentes de la carte graphique. Désactivez-les si des textures ou des ombres semblent fausses. Appliqué au démarrage.', 'Weniger Warten auf die Grafikkarte. Schalte sie aus, wenn Texturen oder Schatten falsch aussehen. Gilt beim Start.', 'Menos esperas a la tarjeta gráfica. Desactívalas si las texturas o las sombras se ven mal. Se aplica al iniciar.'),
+    ('Read without waiting', 'Lettura senza attesa', 'Lecture sans attente', 'Lesen ohne Warten', 'Lectura sin espera'),
+    ('More FPS: the game may read GPU data one frame old. Switch it off if lighting or objects look wrong. Applied at start.', 'Più FPS: il gioco può leggere dati della GPU vecchi di un fotogramma. Disattivala se luci o oggetti appaiono sbagliati. Applicato all’avvio.', 'Plus d’IPS : le jeu peut lire des données GPU vieilles d’une image. Désactivez-la si l’éclairage ou des objets semblent faux. Appliqué au démarrage.', 'Mehr FPS: Das Spiel kann GPU-Daten lesen, die ein Bild alt sind. Schalte es aus, wenn Licht oder Objekte falsch aussehen. Gilt beim Start.', 'Más FPS: el juego puede leer datos de la GPU de un fotograma antes. Desactívala si la iluminación o los objetos se ven mal. Se aplica al iniciar.'),
+    ('Draw pipeline thread', 'Thread della pipeline di disegno', 'Thread du pipeline de dessin', 'Thread der Zeichen-Pipeline', 'Hilo de la canalización de dibujo'),
+    ('Prepares the draws on a second thread. Auto turns it on with 8 or more CPU threads. Applied at start.', 'Prepara i disegni su un secondo thread. Automatico lo attiva con 8 o più thread della CPU. Applicato all’avvio.', 'Prépare les dessins sur un second thread. Auto l’active à partir de 8 threads processeur. Appliqué au démarrage.', 'Bereitet die Zeichenbefehle in einem zweiten Thread vor. Automatisch schaltet ihn ab 8 CPU-Threads ein. Gilt beim Start.', 'Prepara los dibujos en un segundo hilo. Automático lo activa con 8 o más hilos de CPU. Se aplica al iniciar.'),
+    ('Draw preparation threads', 'Thread di preparazione', 'Threads de préparation', 'Vorbereitungs-Threads', 'Hilos de preparación'),
+    ('Helper threads that pre-process the game’s draw lists. Auto uses half of your CPU threads, at most 8. Applied at start.', 'Thread di aiuto che preparano in anticipo le liste di disegno del gioco. Automatico usa metà dei thread della CPU, al massimo 8. Applicato all’avvio.', 'Threads d’aide qui pré-traitent les listes de dessin du jeu. Auto utilise la moitié des threads processeur, 8 au plus. Appliqué au démarrage.', 'Hilfs-Threads, die die Zeichenlisten des Spiels vorverarbeiten. Automatisch nutzt die Hälfte der CPU-Threads, höchstens 8. Gilt beim Start.', 'Hilos de ayuda que preprocesan las listas de dibujo del juego. Automático usa la mitad de los hilos de CPU, como máximo 8. Se aplica al iniciar.'),
+    ('Copy threads', 'Thread di copia', 'Threads de copie', 'Kopier-Threads', 'Hilos de copia'),
+    ('Threads for the memory copies the game waits for. Auto uses a quarter of your CPU threads, at most 4. Applied at start.', 'Thread per le copie di memoria che il gioco aspetta. Automatico usa un quarto dei thread della CPU, al massimo 4. Applicato all’avvio.', 'Threads pour les copies mémoire que le jeu attend. Auto utilise un quart des threads processeur, 4 au plus. Appliqué au démarrage.', 'Threads für Speicherkopien, auf die das Spiel wartet. Automatisch nutzt ein Viertel der CPU-Threads, höchstens 4. Gilt beim Start.', 'Hilos para las copias de memoria que espera el juego. Automático usa una cuarta parte de los hilos de CPU, como máximo 4. Se aplica al iniciar.'),
+    ('Vulkan recording thread', 'Thread di registrazione Vulkan', 'Thread d’enregistrement Vulkan', 'Vulkan-Aufzeichnungs-Thread', 'Hilo de grabación de Vulkan'),
+    ('Records the graphics commands on their own thread. Turn it off only to diagnose problems. Applied at start.', 'Registra i comandi grafici su un thread dedicato. Disattivalo solo per diagnosticare problemi. Applicato all’avvio.', 'Enregistre les commandes graphiques sur un thread dédié. Ne le désactivez que pour diagnostiquer des problèmes. Appliqué au démarrage.', 'Zeichnet die Grafikbefehle in einem eigenen Thread auf. Schalte ihn nur zur Fehlersuche aus. Gilt beim Start.', 'Graba los comandos gráficos en su propio hilo. Desactívalo solo para diagnosticar problemas. Se aplica al iniciar.'),
+    ('Restore GPU and thread defaults', 'Ripristina GPU e thread', 'Rétablir GPU et threads', 'GPU und Threads zurücksetzen', 'Restablecer GPU e hilos'),
     # Upscaling modes.
     ('Mode', 'Modalità', 'Mode', 'Modus', 'Modo'),
     ('Native', 'Nativa', 'Native', 'Nativ', 'Nativa'),
@@ -1883,6 +1904,7 @@ class LauncherWindow:
                           font=self.font(14, 'bold')).pack(side='left', padx=(0, self.px(10)))
             ImageButton(self, control, t('Clear'), self.clear_cache).widget.pack(side='left')
         self.row(body, 'Shader cache', make_cache)
+        self.gpu_threads(body)
         self.sec(body, 'DEVELOPMENT')
         self.toggle_row(body, 'Validation layer', self.app.get('vk_validation', False),
                         lambda v: self.set_app('vk_validation', v), 'Vulkan checks for bug reports; slower.')
@@ -1894,6 +1916,48 @@ class LauncherWindow:
             str(self.logic.CONFIG_DIR))).widget.pack(side='right'))
         self.buttons(body, [('Export settings', self.export_settings), ('Import settings', self.import_settings)])
         self.footer(foot, [('Reset all', self.reset_all, False), ('Close', lambda: self.open_page(None), True)])
+
+    def gpu_threads(self, body):
+        """GPU readbacks and the port's threads (environment variables at the next start)."""
+        self.sec(body, 'GPU AND THREADS')
+        self.row(body, 'GPU readbacks',
+                 lambda c: self.choice(c, [('', 'Auto'), ('0', 'Off'), ('1', 'Relaxed'), ('2', 'Precise')],
+                                       self.app.get('readbacks', ''), lambda v: self.set_app('readbacks', v),
+                                       14).pack(side='right'),
+                 'How the game reads data the graphics card produced. Auto is recommended. Precise is the most faithful and the slowest; Off is the fastest but lighting or objects may look wrong.')
+        self.toggle_row(body, 'Deferred readbacks', self.ini.get('deferred_readback', '1') == '1',
+                        lambda v: self.set_ini('deferred_readback', '1' if v else '0'),
+                        'Fewer waits for the graphics card. Switch it off if textures or shadows look wrong. Applied at start.')
+        self.toggle_row(body, 'Read without waiting', self.ini.get('stale_readback', '0') == '1',
+                        lambda v: self.set_ini('stale_readback', '1' if v else '0'),
+                        'More FPS: the game may read GPU data one frame old. Switch it off if lighting or objects look wrong. Applied at start.')
+        self.row(body, 'Draw pipeline thread',
+                 lambda c: self.choice(c, [('', 'Auto'), ('1', 'On'), ('0', 'Off')], self.app.get('draw_pipe', ''),
+                                       lambda v: self.set_app('draw_pipe', v), 14).pack(side='right'),
+                 'Prepares the draws on a second thread. Auto turns it on with 8 or more CPU threads. Applied at start.')
+        self.row(body, 'Draw preparation threads',
+                 lambda c: self.choice(c, [('', 'Auto'), ('0', '0'), ('1', '1'), ('2', '2'), ('4', '4'), ('8', '8')],
+                                       str(self.app.get('prep_workers', '')),
+                                       lambda v: self.set_app('prep_workers', v), 14).pack(side='right'),
+                 'Helper threads that pre-process the game’s draw lists. Auto uses half of your CPU threads, at most 8. Applied at start.')
+        self.row(body, 'Copy threads',
+                 lambda c: self.choice(c, [('', 'Auto'), ('1', '1'), ('2', '2'), ('4', '4')],
+                                       str(self.app.get('copy_threads', '')),
+                                       lambda v: self.set_app('copy_threads', v), 14).pack(side='right'),
+                 'Threads for the memory copies the game waits for. Auto uses a quarter of your CPU threads, at most 4. Applied at start.')
+        self.toggle_row(body, 'Vulkan recording thread', self.app.get('record_thread', True),
+                        lambda v: self.set_app('record_thread', v),
+                        'Records the graphics commands on their own thread. Turn it off only to diagnose problems. Applied at start.')
+
+        def restore():
+            for key, value in (('readbacks', ''), ('draw_pipe', ''), ('prep_workers', ''), ('copy_threads', ''),
+                               ('record_thread', True)):
+                self.app[key] = value
+            self.ini['deferred_readback'], self.ini['stale_readback'] = '1', '0'
+            self.save()
+            self.open_page(self.page)
+            self.toast(t('Defaults restored'))
+        self.buttons(body, [('Restore GPU and thread defaults', restore)])
 
     def page_log(self, body, foot):
         tk = self.tk
