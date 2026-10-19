@@ -292,4 +292,8 @@ using AvPlayerLogCallback = int PS4_SYSV_ABI (*)(void* p, const char* format, va
 
 void RegisterLib(Core::Loader::SymbolsResolver* sym);
 
+/// gow3: true while the game asks for movie frames (in the last 300 ms). The present thread then
+/// holds the game to 60 FPS, as on PS4: its movie subtitle scripts count 60 frames per second.
+bool Gow3MoviePlaying();
+
 } // namespace Libraries::AvPlayer

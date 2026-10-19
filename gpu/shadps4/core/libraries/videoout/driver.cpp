@@ -23,6 +23,7 @@
 #include "common/thread.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
+#include "core/libraries/avplayer/avplayer.h"
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/videoout/driver.h"
 #include "core/libraries/videoout/videoout_error.h"
@@ -605,6 +606,23 @@ void VideoOutDriver::DrawLastFrame() {
 
 bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
                                 bool is_eop /*= false*/) {
+    // gow3: GOW3_FLIP_LOG=1 prints the game's flips per second (its own update rate), once a second.
+    static const bool flip_log = std::getenv("GOW3_FLIP_LOG") != nullptr;
+    if (flip_log) {
+        static std::mutex flip_log_mutex;
+        static auto window = std::chrono::steady_clock::now();
+        static unsigned flips = 0;
+        std::scoped_lock log_lock{flip_log_mutex};
+        ++flips;
+        const auto now = std::chrono::steady_clock::now();
+        const float seconds = std::chrono::duration<float>(now - window).count();
+        if (seconds >= 1.0f) {
+            std::printf("Flips: %.1f/s\n", flips / seconds);
+            std::fflush(stdout);
+            window = now;
+            flips = 0;
+        }
+    }
     {
         std::unique_lock lock{port->port_mutex};
         if (index != -1 && port->flip_status.flip_pending_num > 16) {
@@ -669,13 +687,19 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
     // In the uncapped mode a lower in-game limit still applies on top.
     const bool env_limit = std::getenv("GOW3_FPS_LIMIT") != nullptr;
     const bool fixed_limit = env_limit || EmulatorSettings.GetVblankFrequency() == 480;
-    const auto current_limit = [&] {
+    const auto chosen_limit = [&] {
         const u32 user = u32(Gow3Settings::Get().fps_limit.load());
         if (!fixed_limit) {
             return user;
         }
         const u32 base = EmulatorSettings.GetFrameLimit();
         return !env_limit && user && (!base || user < base) ? user : base;
+    };
+    // gow3: 60 FPS at most while a movie plays: the game's subtitle scripts count 60 frames per
+    // second, so at 120 FPS the subtitles ran twice as fast and replaced each other early.
+    const auto current_limit = [&] {
+        const u32 limit = chosen_limit();
+        return Libraries::AvPlayer::Gow3MoviePlaying() && (!limit || limit > 60) ? 60u : limit;
     };
     u32 frame_limit = current_limit();
     auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)

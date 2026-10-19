@@ -7,9 +7,31 @@
 #include "core/libraries/avplayer/avplayer_impl.h"
 #include "core/libraries/libs.h"
 
+#include <atomic>
+#include <chrono>
 #include <string_view>
 
 namespace Libraries::AvPlayer {
+
+namespace {
+// gow3: when the game last asked for a movie frame (steady clock ticks).
+std::atomic<s64> last_video_request{0};
+
+void MarkVideoRequest() {
+    last_video_request.store(std::chrono::steady_clock::now().time_since_epoch().count(),
+                             std::memory_order_relaxed);
+}
+} // namespace
+
+bool Gow3MoviePlaying() {
+    const s64 last = last_video_request.load(std::memory_order_relaxed);
+    if (!last) {
+        return false;
+    }
+    const auto age = std::chrono::steady_clock::now().time_since_epoch() -
+                     std::chrono::steady_clock::duration(last);
+    return age < std::chrono::milliseconds(300);
+}
 
 s32 PS4_SYSV_ABI sceAvPlayerAddSource(AvPlayerHandle handle, const char* filename) {
     LOG_TRACE(Lib_AvPlayer, "filename = {}", filename);
@@ -89,6 +111,7 @@ bool PS4_SYSV_ABI sceAvPlayerGetVideoData(AvPlayerHandle handle, AvPlayerFrameIn
     if (handle == nullptr || video_info == nullptr) {
         return false;
     }
+    MarkVideoRequest();
     return handle->GetVideoData(*video_info);
 }
 
@@ -98,6 +121,7 @@ bool PS4_SYSV_ABI sceAvPlayerGetVideoDataEx(AvPlayerHandle handle,
     if (handle == nullptr || video_info == nullptr) {
         return false;
     }
+    MarkVideoRequest();
     return handle->GetVideoData(*video_info);
 }
 
