@@ -114,6 +114,9 @@ public:
     /// Invalidates any image in the logical page range.
     void InvalidateMemory(VAddr addr, size_t size);
 
+    /// gow3: whether a CPU write to [addr, addr + size) touches an image the GPU drew into.
+    bool TouchesGpuModifiedImage(VAddr addr, size_t size);
+
     /// Marks an image as dirty if it exists at the provided address.
     void InvalidateMemoryFromGPU(VAddr address, size_t max_size);
 

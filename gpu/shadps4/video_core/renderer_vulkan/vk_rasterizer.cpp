@@ -3320,6 +3320,28 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
+    // gow3: a CPU write to an image the GPU drew into: the game may have submitted work that still
+    // reads that image (it already counts it as done) and then reused the memory, as at the end
+    // of a movie, whose last frame the comic page shows while the page's textures load into the
+    // movie's memory. The GPU thread processes those submits later than a PS4 would; marking the
+    // image dirty first made them read the new bytes as the old image (torn, blue frames). Let
+    // the GPU thread catch up first (at most 100 ms: a submit may wait for this very thread).
+    if (!assume_locks && std::this_thread::get_id() != liverpool->GetGpuCommandProcessorThread() &&
+        texture_cache.TouchesGpuModifiedImage(addr, size)) {
+        static std::atomic<u32> waits{0};
+        if (const u32 n = waits.fetch_add(1, std::memory_order_relaxed); n < 30 || n % 1000 == 0) {
+            std::printf("Invalidate: CPU write to a drawn image at %llx: GPU catches up first (#%u)\n",
+                        (unsigned long long)addr, n + 1);
+        }
+        if (!liverpool->WaitGpuIdleFor(std::chrono::milliseconds(100))) {
+            static std::atomic<u32> timeouts{0};
+            if (timeouts.fetch_add(1, std::memory_order_relaxed) < 20) {
+                std::printf("Invalidate: GPU busy for 100 ms before a CPU write to a drawn image at %llx\n",
+                            (unsigned long long)addr);
+            }
+        }
+        DrainDrawPipe();
+    }
     texture_cache.ResolveReadbacks(addr, size, assume_locks, VideoCore::ReadbackSource::CpuWrite);
     buffer_cache.InvalidateMemory(addr, size, assume_locks);
     texture_cache.InvalidateMemory(addr, size);

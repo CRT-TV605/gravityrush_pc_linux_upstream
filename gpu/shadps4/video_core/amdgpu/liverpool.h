@@ -112,6 +112,12 @@ public:
         submit_cv.wait(lk, [this] { return num_submits == 0; });
     }
 
+    /// gow3: like WaitGpuIdle, but gives up after `limit` (a submit may wait for the caller).
+    bool WaitGpuIdleFor(std::chrono::milliseconds limit) noexcept {
+        std::unique_lock lk{submit_mutex};
+        return submit_cv.wait_for(lk, limit, [this] { return num_submits == 0; });
+    }
+
     /// gow3: also the draw recording thread and the fences it deferred are done (see
     /// work_retired). sceGnmSubmitDone does not block the guest when this is true.
     bool IsGpuIdle() const {

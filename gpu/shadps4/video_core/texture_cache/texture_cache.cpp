@@ -473,6 +473,15 @@ void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     UntrackImage(image_id);
 }
 
+bool TextureCache::TouchesGpuModifiedImage(VAddr addr, size_t size) {
+    std::scoped_lock lock{mutex};
+    bool touches = false;
+    ForEachImageInRegion(addr, size, [&](ImageId, Image& image) {
+        touches = touches || (True(image.flags & ImageFlagBits::GpuModified) && image.Overlaps(addr, size));
+    });
+    return touches;
+}
+
 void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
     std::scoped_lock lock{mutex};
     const auto pages_start = PageManager::GetPageAddr(addr);
@@ -1194,6 +1203,39 @@ void TextureCache::RefreshImage(Image& image) {
     if (image_copies.empty()) {
         image.flags &= ~ImageFlagBits::Dirty;
         return;
+    }
+
+    // gow3: GOW3_REFRESH_TRACE=1 logs screen-sized images re-uploaded from guest memory (a render
+    // target refreshed from stale CPU-side data shows as garbage for a frame). GOW3_REFRESH_DUMP=1
+    // also starts a frame dump (GOW3_FRAME_DUMP_TRIGGER) when a GPU-written one is re-uploaded.
+    static const bool refresh_trace = std::getenv("GOW3_REFRESH_TRACE") != nullptr;
+    if (refresh_trace && image.info.size.width >= 1024 && image.info.size.height >= 512) {
+        static std::atomic<u32> lines{0};
+        if (lines.fetch_add(1, std::memory_order_relaxed) < 4000) {
+            std::printf("Refresh: %ux%u %s tile %u at %llx size %llx%s%s%s%s mips %zu/%u\n",
+                        image.info.size.width, image.info.size.height,
+                        vk::to_string(image.info.pixel_format).c_str(), u32(image.info.tile_mode),
+                        (unsigned long long)image.info.guest_address,
+                        (unsigned long long)image.info.guest_size,
+                        True(image.flags & ImageFlagBits::CpuDirty) ? " cpu-dirty" : "",
+                        True(image.flags & ImageFlagBits::MaybeCpuDirty) ? " maybe-cpu" : "",
+                        is_gpu_dirty ? " gpu-dirty" : "", is_gpu_modified ? " gpu-written" : "",
+                        image_copies.size(), num_mips);
+            std::fflush(stdout);
+        }
+        static const bool refresh_dump = std::getenv("GOW3_REFRESH_DUMP") != nullptr;
+        static const char* dump_trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER");
+        if (refresh_dump && dump_trigger && is_gpu_modified) {
+            static auto last_dump = std::chrono::steady_clock::time_point{};
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_dump > std::chrono::seconds(3)) {
+                last_dump = now;
+                if (FILE* f = std::fopen(dump_trigger, "w")) {
+                    std::fclose(f);
+                }
+                std::printf("Refresh: frame dump started\n");
+            }
+        }
     }
 
     scheduler.EndRendering();
