@@ -178,39 +178,61 @@ static void key_axis(uint8_t *axis, bool negative, bool positive) {
 }
 /* Motion sensors (DualSense / DualShock 4 through SDL, as shadPS4 does): angular velocity in
  * rad/s on the PS4's axes, acceleration in g (SDL's m/s^2 x 0.098), and an orientation
- * quaternion integrated from the angular velocity (scePadResetOrientation brings it back to
- * identity). Sensors are switched on again whenever the gamepad changes (hot-plugging). */
-static struct { SDL_Gamepad *pad; int gyro, accel; float q[4]; uint64_t last_us; } motion={NULL,0,0,{0,0,0,1},0};
-static void motion_reset(void) { motion.q[0]=motion.q[1]=motion.q[2]=0.0f; motion.q[3]=1.0f; motion.last_us=0; }
+ * quaternion (scePadResetOrientation brings it back to identity). The orientation comes from
+ * gr_motion_filter.h: the gyro bias is learned while the controller lies still, and with the
+ * game's tilt correction (Gravity Rush asks for it) the accelerometer keeps pitch and roll from
+ * drifting; before, the raw integration made the view turn by itself (the apple scene).
+ * Sensors are switched on again whenever the gamepad changes (hot-plugging). */
+#include "gr_motion_filter.h"
+static struct { SDL_Gamepad *pad; int gyro, accel, tilt; MotionFilter filter; uint64_t last_us; } motion;
+static void motion_reset(void) { motion_filter_reset(&motion.filter); motion.last_us=0; }
+/* The orientation the game sees: the filtered one with its rotation angle scaled by the gyro
+ * sensitivity (scaling the integration instead would fight the tilt correction). */
+static void scaled_orientation(const float q[4], float sens, float out[4]) {
+    float w=q[3] < -1.0f ? -1.0f : q[3] > 1.0f ? 1.0f : q[3];
+    float s=sqrtf(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]);
+    if (s<1e-6f || sens==1.0f) { memcpy(out,q,4*sizeof(float)); return; }
+    float half=atan2f(s,w)*sens, k=sinf(half)/s;
+    out[0]=q[0]*k; out[1]=q[1]*k; out[2]=q[2]*k; out[3]=cosf(half);
+}
 static void sample_motion(SDL_Gamepad *g, PadData *d) {
     if (g!=motion.pad) {
         motion.pad=g;
         motion.gyro=SDL_GamepadHasSensor(g,SDL_SENSOR_GYRO) && SDL_SetGamepadSensorEnabled(g,SDL_SENSOR_GYRO,true);
         motion.accel=SDL_GamepadHasSensor(g,SDL_SENSOR_ACCEL) && SDL_SetGamepadSensorEnabled(g,SDL_SENSOR_ACCEL,true);
-        motion_reset();
+        motion_filter_init(&motion.filter);
+        motion.last_us=0;
         printf("Runtime: gamepad motion sensors: gyro %s, accelerometer %s\n",motion.gyro ? "on" : "none",motion.accel ? "on" : "none");
     }
-    float v[3];
-    if (motion.accel && SDL_GetGamepadSensorData(g,SDL_SENSOR_ACCEL,v,3))
-        for (int i=0;i<3;++i) d->acceleration[i]=v[i]*0.098f;
+    float v[3], a[3];
+    const int have_accel=motion.accel && SDL_GetGamepadSensorData(g,SDL_SENSOR_ACCEL,a,3);
+    if (have_accel)
+        for (int i=0;i<3;++i) { a[i]*=0.098f; d->acceleration[i]=a[i]; }
+    /* GOW3_GYRO_SENS: gyro sensitivity (default 1.4: the player found 1.0 a little slow). */
+    static float sens=-1.0f;
+    if (sens<0.0f) { const char *e=getenv("GOW3_GYRO_SENS"); sens=e && atof(e)>0.0 ? (float)atof(e) : 1.4f; }
     if (motion.gyro && SDL_GetGamepadSensorData(g,SDL_SENSOR_GYRO,v,3)) {
-        /* GOW3_GYRO_SENS: gyro sensitivity (default 1.4: the player found 1.0 a little slow). */
-        static float sens=-1.0f;
-        if (sens<0.0f) { const char *e=getenv("GOW3_GYRO_SENS"); sens=e && atof(e)>0.0 ? (float)atof(e) : 1.4f; }
-        for (int i=0;i<3;++i) { v[i]*=sens; d->angular_velocity[i]=v[i]; }
         uint64_t now=d->timestamp;
         float dt=motion.last_us && now>motion.last_us ? (float)(now-motion.last_us)/1e6f : 0.0f;
         motion.last_us=now;
-        if (dt>0.0f && dt<1.0f) {
-            float *q=motion.q, w[3]={v[0],v[1],v[2]};
-            float dq[4]={q[3]*w[0]+q[1]*w[2]-q[2]*w[1], q[3]*w[1]+q[2]*w[0]-q[0]*w[2],
-                         q[3]*w[2]+q[0]*w[1]-q[1]*w[0], -q[0]*w[0]-q[1]*w[1]-q[2]*w[2]};
-            for (int i=0;i<4;++i) q[i]+=0.5f*dq[i]*dt;
-            float n=sqrtf(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);
-            if (n>0.0f) for (int i=0;i<4;++i) q[i]/=n;
+        float w[3];
+        motion_filter_update(&motion.filter,v,have_accel ? a : NULL,motion.tilt,dt,w);
+        for (int i=0;i<3;++i) d->angular_velocity[i]=w[i]*sens;
+        /* GOW3_MOTION_LOG=1: the filtered orientation and the learned bias every 2 s. */
+        static int motion_log=-1;
+        static uint64_t next_log;
+        if (motion_log<0) motion_log=getenv("GOW3_MOTION_LOG")!=NULL;
+        if (motion_log && now>=next_log) {
+            const float *q=motion.filter.q, *bias=motion.filter.bias;
+            printf("Motion: q %.4f %.4f %.4f %.4f (%.1f deg) bias %.4f %.4f %.4f tilt %d still %.1f s"
+                   " gyro %.4f %.4f %.4f accel %.3f %.3f %.3f dt %.4f\n",
+                   q[0],q[1],q[2],q[3],2.0f*acosf(fminf(1.0f,fabsf(q[3])))*57.2958f,
+                   bias[0],bias[1],bias[2],motion.tilt,motion.filter.still_s,
+                   v[0],v[1],v[2],have_accel ? a[0] : 0.0f,have_accel ? a[1] : 0.0f,have_accel ? a[2] : 0.0f,dt);
+            next_log=now+2000000;
         }
     }
-    memcpy(d->orientation,motion.q,sizeof(motion.q));
+    scaled_orientation(motion.filter.q,sens,d->orientation);
 }
 static void sample_host(PadData *d) {
     memset(d,0,sizeof(*d));
@@ -551,7 +573,7 @@ static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
 }
 static ABI int32_t pad_ok_handle(int32_t handle) { return handle==PAD_HANDLE && opened ? 0 : ERR_INVALID_HANDLE; }
 static ABI int32_t pad_ok_handle_flag(int32_t handle, uint8_t flag) { (void)flag; return pad_ok_handle(handle); }
-/* The game's motion sensor settings (logged: the orientation is integrated without them). */
+/* The game's motion sensor settings: the tilt correction is applied (gr_motion_filter.h). */
 static ABI int32_t pad_deadband_state(int32_t handle, uint8_t flag) {
     static int logged;
     if (!logged++) printf("Runtime: scePadSetAngularVelocityDeadbandState(%d)\n",flag);
@@ -560,7 +582,9 @@ static ABI int32_t pad_deadband_state(int32_t handle, uint8_t flag) {
 static ABI int32_t pad_tilt_correction_state(int32_t handle, uint8_t flag) {
     static int logged;
     if (!logged++) printf("Runtime: scePadSetTiltCorrectionState(%d)\n",flag);
-    return pad_ok_handle(handle);
+    int32_t r=pad_ok_handle(handle);
+    if (!r) { pthread_mutex_lock(&lock); motion.tilt=flag!=0; pthread_mutex_unlock(&lock); }
+    return r;
 }
 static ABI int32_t pad_reset_orientation(int32_t handle) {
     static int logged;
