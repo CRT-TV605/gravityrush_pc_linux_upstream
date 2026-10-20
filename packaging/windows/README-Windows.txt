@@ -1,4 +1,4 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.4
+Gravity Rush Remastered (PS4) for PC - version 0.1.5
 ====================================================
 
 A native PC port: the game's own code runs on your processor, with no emulator. This is an early
@@ -54,8 +54,7 @@ Reporting a problem
 
 Known issues
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- Occasional small graphics glitches with TAA, FSR 3.1 and DLSS are still being tracked down:
-  press F12 when you see one and send the files.
+- Rare short graphics glitches may still appear: press F12 when you see one and send the files.
 - Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
 - Online features (PSN) are not available: the game runs as a console that is not signed in.
 

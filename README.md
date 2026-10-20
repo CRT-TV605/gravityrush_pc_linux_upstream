@@ -20,7 +20,7 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: version 0.1.4 — the opening, the first episode and the city work,
+**Status: version 0.1.5 — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
 **[Download the latest release](https://github.com/LucaPazienza/gravityrush_pc/releases/latest)** —
@@ -57,8 +57,7 @@ Not done yet / known gaps:
 - Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
   are not modelled: the dry sound plays.
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- Occasional small graphics glitches with the temporal upscalers are still being tracked down
-  (F12 captures help).
+- Rare short graphics glitches may still appear (F12 captures help).
 - No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap
