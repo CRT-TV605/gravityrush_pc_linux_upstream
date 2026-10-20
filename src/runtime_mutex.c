@@ -169,7 +169,12 @@ static int cond_take_pending(GuestCond *c) {
     return __atomic_compare_exchange_n(&c->pending_us, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 static void cond_note_wakeup(GuestCond *c) {
-    if (__atomic_load_n(&c->waiters, __ATOMIC_ACQUIRE) == 0)
+    static int enabled = -1; /* GOW3_COND_PENDING=0 turns it off (A/B tests) */
+    if (enabled < 0) {
+        const char *env = getenv("GOW3_COND_PENDING");
+        enabled = !(env && env[0] == '0');
+    }
+    if (enabled && __atomic_load_n(&c->waiters, __ATOMIC_ACQUIRE) == 0)
         __atomic_store_n(&c->pending_us, cond_now_us(), __ATOMIC_RELEASE);
 }
 static size_t conds, waits, wakeups;
