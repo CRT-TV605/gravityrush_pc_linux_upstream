@@ -418,9 +418,11 @@ bool Rasterizer::DrawPipeWanted() {
     if (env && env[0]) {
         return env[0] == '1';
     }
-    // Stage B spins while draws flow. Measured ahead with 16 threads (+19%) and with 4 cores /
-    // 8 threads (taskset, Steam Deck-like: +18%).
-    return Gow3Threads::Available() >= 8;
+    // gow3: off unless asked for. Together with the draw preparation workers' prepared draws it
+    // showed one-frame "exploded" triangles in Gravity Rush (8-13 in 5 minutes of the ep01_c
+    // tutorial scene, none with either one off; a timing race: any slowdown hid it). In that
+    // scene the pipe adds 4% (133 -> 138 FPS uncapped), the prepared draws 17% (115 -> 133).
+    return false;
 }
 
 bool Rasterizer::UseDrawPipe() const {
