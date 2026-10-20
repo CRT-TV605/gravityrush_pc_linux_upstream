@@ -54,7 +54,9 @@ Reporting a problem
 
 Known issues
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- Rare short graphics glitches may still appear: press F12 when you see one and send the files.
+- A short graphics glitch (about 0.2 s, the lower part of the picture turns into blue stripes) at
+  the start of an episode 1 movie, when Kat breaks through a door, is still being investigated.
+  Other glitches: press F12 when you see one and send the files.
 - Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
 - Online features (PSN) are not available: the game runs as a console that is not signed in.
 
