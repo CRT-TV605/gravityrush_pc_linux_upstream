@@ -20,8 +20,8 @@ class GraphicsOptionsTest(unittest.TestCase):
         self.ini.write_text('render_resolution=8K\nengine_fps=90\nstale_readback=yes\n', encoding='utf-8')
         options, reverted = g.prepare(self.ini, self.state)
         self.assertFalse(reverted)
-        self.assertEqual(options, {'render_resolution': 'native', 'engine_fps': '120', 'deferred_readback': '1',
-                                   'stale_readback': '1', 'async_shaders': '1'})
+        self.assertEqual(options, {'render_resolution': 'native', 'engine_fps': '60', 'deferred_readback': '1',
+                                   'stale_readback': '1', 'async_shaders': '1', 'shadow_quality': 'standard'})
 
     def test_write_keys_keeps_other_lines(self):
         self.ini.write_text('# comment\nshow_fps=1\nengine_fps=60\n', encoding='utf-8')

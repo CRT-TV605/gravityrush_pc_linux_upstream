@@ -76,7 +76,10 @@ class ModTests(unittest.TestCase):
 
     def test_mod_symlinks_rejected(self):
         a = self.mod('A')
-        (a / 'dvdroot_ps4/escape').symlink_to(self.assets, target_is_directory=True)
+        try:
+            (a / 'dvdroot_ps4/escape').symlink_to(self.assets, target_is_directory=True)
+        except OSError:
+            self.skipTest('symbolic links need Developer Mode or administrator rights on Windows')
         with self.assertRaises(ValueError):
             mods.build_overlay(self.game, self.root / 'out', [('A', a)])
 

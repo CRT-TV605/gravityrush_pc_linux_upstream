@@ -69,7 +69,7 @@ class ControlMapTest(unittest.TestCase):
 
     def test_graphics_defaults_match_the_game(self):
         d = launcher.INI_DEFAULTS
-        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('borderless', '1', '0', '120'))
+        self.assertEqual((d['display_mode'], d['vsync'], d['fps_limit'], d['engine_fps']), ('borderless', '1', '0', '60'))  # the game's 60, as on PS4
         self.assertEqual([v for v, _t in launcher.FPS_LIMITS], ['30', '60', '120', '240', '0'])
         self.assertEqual((d['fsr1'], d['rcas'], d['rcas_strength'], d['frames_queued']), ('0', '1', '75', '1'))
         self.assertEqual([v for v, _t in launcher.FRAMES_QUEUED], ['1', '2', '0'])
@@ -77,9 +77,9 @@ class ControlMapTest(unittest.TestCase):
 
 
 class ReleaseVersionTest(unittest.TestCase):
-    def test_first_start_is_in_english(self):
-        # The translations are partial; 'System' stays a choice in Advanced.
-        self.assertEqual(launcher.APP_DEFAULTS['ui_language'], 'en')
+    def test_first_start_follows_windows(self):
+        # '' follows the Windows language (the launcher has English, Italian, French, German, Spanish).
+        self.assertEqual(launcher.APP_DEFAULTS['ui_language'], '')
 
 
 if __name__ == '__main__':
