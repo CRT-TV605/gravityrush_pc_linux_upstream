@@ -142,12 +142,41 @@ static ABI int32_t mutex_timedlock(GuestMutex **mutex, uint32_t usec) {
 }
 /* Condition variables: opaque handles over host pthread_cond (CLOCK_REALTIME,
  * like FreeBSD's default), sharing the host mutex behind GuestMutex. */
-typedef struct { pthread_cond_t native; } GuestCond;
+/* waiters: threads inside a wait. pending_us: when a wakeup found no waiter (0: none).
+ *
+ * The startup hang: the main thread creates a thread whose first act is a bare signal of an
+ * event (eboot 0x3f4f10, no mutex) and then waits on it with no predicate (0x3f5235 ->
+ * 0x44e220). The PS4 scheduler runs the new thread only once the creator waits; here it may
+ * signal first, the wakeup is lost and the game never gets past start-up (1 start in 4-8).
+ * A wakeup that finds no waiter is therefore kept for 50 ms, and a wait beginning within that
+ * time returns at once: a spurious wakeup, which POSIX allows and code with a predicate loop
+ * simply waits again after. */
+typedef struct { pthread_cond_t native; volatile long waiters; volatile int64_t pending_us; } GuestCond;
+static int64_t cond_now_us(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
+}
+/* Called with the mutex held, before waiting: 1 when a recent wakeup without waiter is consumed. */
+static int cond_take_pending(GuestCond *c) {
+    const int64_t pending = __atomic_load_n(&c->pending_us, __ATOMIC_ACQUIRE);
+    if (!pending) return 0;
+    if (cond_now_us() - pending > 50000) {
+        __atomic_compare_exchange_n(&c->pending_us, &(int64_t){pending}, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+        return 0;
+    }
+    int64_t expected = pending;
+    return __atomic_compare_exchange_n(&c->pending_us, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+static void cond_note_wakeup(GuestCond *c) {
+    if (__atomic_load_n(&c->waiters, __ATOMIC_ACQUIRE) == 0)
+        __atomic_store_n(&c->pending_us, cond_now_us(), __ATOMIC_RELEASE);
+}
 static size_t conds, waits, wakeups;
 static ABI int32_t cond_init(GuestCond **out, void **attr, const char *name) {
     (void)attr; (void)name;
     if (!out) return orbis_error(EINVAL);
-    GuestCond *c = malloc(sizeof(*c));
+    GuestCond *c = calloc(1, sizeof(*c));
     if (!c) return orbis_error(ENOMEM);
     int e = pthread_cond_init(&c->native, NULL);
     if (e) { free(c); return orbis_error(e); }
@@ -185,19 +214,67 @@ static ABI int32_t cond_destroy(GuestCond **cond) {
     }
     return 0;
 }
+/* GOW3_COND_TRACE=<guest return address of a wait> (the startup hang: the main thread waits at
+ * eboot+0x44e246 for good): a wait from there logs the recent wakeups of its condition (a ring
+ * of the last 256 on any condition) and every later one, with the guest code that made them. */
+typedef struct { GuestCond **cond; void *caller; unsigned long thread; } CondEvent;
+static CondEvent cond_ring[256];
+static unsigned cond_ring_next;
+static GuestCond **_Atomic cond_watched;
+static uintptr_t cond_trace_caller(void) {
+    static uintptr_t traced = 1;
+    if (traced == 1) {
+        const char *env = getenv("GOW3_COND_TRACE");
+        traced = env ? (uintptr_t)strtoull(env, NULL, 0) : 0;
+    }
+    return traced;
+}
+static void cond_trace(GuestCond **cond, const char *what, void *caller) {
+    if (!cond_trace_caller()) return;
+    const unsigned long thread = (unsigned long)pthread_self();
+    if (what[0] == 'w' || what[0] == 't') {
+        if ((uintptr_t)caller != cond_trace_caller()) return;
+        printf("Cond %p: %s from %p (thread %lu); earlier wakeups of it:\n", (void *)cond, what, caller, thread);
+        for (unsigned i = 0; i < 256; ++i) {
+            const CondEvent e = cond_ring[(cond_ring_next + i) % 256];
+            if (e.cond == cond) printf("  wakeup from %p (thread %lu)\n", e.caller, e.thread);
+        }
+        cond_watched = cond;
+        fflush(stdout);
+        return;
+    }
+    const unsigned at = __atomic_fetch_add(&cond_ring_next, 1, __ATOMIC_RELAXED) % 256;
+    cond_ring[at] = (CondEvent){cond, caller, thread};
+    if (cond_watched == cond) {
+        printf("Cond %p: %s from %p (thread %lu)\n", (void *)cond, what, caller, thread);
+        fflush(stdout);
+    }
+}
 static ABI int32_t cond_wait(GuestCond **cond, GuestMutex **mutex) {
+    cond_trace(cond, "wait", __builtin_return_address(0));
     int32_t e = ensure_cond(cond);
     if (e) return e;
     if (!mutex || (uintptr_t)*mutex < 3) return orbis_error(EINVAL);
     ++waits;
-    return orbis_error(pthread_cond_wait(&(*cond)->native, &(*mutex)->native));
+    GuestCond *c = *cond;
+    if (cond_take_pending(c)) return 0;
+    __atomic_add_fetch(&c->waiters, 1, __ATOMIC_ACQ_REL);
+    e = orbis_error(pthread_cond_wait(&c->native, &(*mutex)->native));
+    __atomic_sub_fetch(&c->waiters, 1, __ATOMIC_ACQ_REL);
+    return e;
 }
 static int32_t cond_wait_until(GuestCond **cond, GuestMutex **mutex, const struct timespec *end) {
+    cond_trace(cond, "timed wait", __builtin_return_address(0));
     int32_t e = ensure_cond(cond);
     if (e) return e;
     if (!mutex || (uintptr_t)*mutex < 3 || !end) return orbis_error(EINVAL);
     ++waits;
-    return timed_error(pthread_cond_timedwait(&(*cond)->native, &(*mutex)->native, end));
+    GuestCond *c = *cond;
+    if (cond_take_pending(c)) return 0;
+    __atomic_add_fetch(&c->waiters, 1, __ATOMIC_ACQ_REL);
+    e = timed_error(pthread_cond_timedwait(&c->native, &(*mutex)->native, end));
+    __atomic_sub_fetch(&c->waiters, 1, __ATOMIC_ACQ_REL);
+    return e;
 }
 static ABI int32_t cond_timedwait(GuestCond **cond, GuestMutex **mutex, uint32_t usec) {
     struct timespec end;
@@ -205,14 +282,20 @@ static ABI int32_t cond_timedwait(GuestCond **cond, GuestMutex **mutex, uint32_t
     return cond_wait_until(cond, mutex, &end);
 }
 static ABI int32_t cond_signal(GuestCond **cond) {
+    cond_trace(cond, "signal", __builtin_return_address(0));
     int32_t e = ensure_cond(cond);
     if (e) return e;
-    ++wakeups; return orbis_error(pthread_cond_signal(&(*cond)->native));
+    ++wakeups;
+    cond_note_wakeup(*cond);
+    return orbis_error(pthread_cond_signal(&(*cond)->native));
 }
 static ABI int32_t cond_broadcast(GuestCond **cond) {
+    cond_trace(cond, "broadcast", __builtin_return_address(0));
     int32_t e = ensure_cond(cond);
     if (e) return e;
-    ++wakeups; return orbis_error(pthread_cond_broadcast(&(*cond)->native));
+    ++wakeups;
+    cond_note_wakeup(*cond);
+    return orbis_error(pthread_cond_broadcast(&(*cond)->native));
 }
 /* PS4 struct timespec is {int64 sec, int64 nsec}, identical to Linux x86-64. */
 typedef struct { int64_t sec, nsec; } GuestTimespec;
