@@ -54,9 +54,6 @@ What works today:
 
 Not done yet / known gaps:
 
-- Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
-  are not modelled: the dry sound plays.
-- Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
 - No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap
@@ -71,7 +68,7 @@ Not done yet / known gaps:
 - [x] First preview release
 - [x] First official release (0.1.2), with automatic updates
 - [ ] Play through the whole story and fix what breaks
-- [ ] NGS2 effects (reverb, filters)
+- [ ] Trophies
 - [ ] Performance and stability work
 
 ## Requirements

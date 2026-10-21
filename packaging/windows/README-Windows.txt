@@ -53,9 +53,7 @@ Reporting a problem
 - Reports: https://github.com/LucaPazienza/gravityrush_pc/issues
 
 Known issues
-- Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
 - Graphics glitches: press F12 when you see one and send the files.
-- Echo and reverb effects of the game's sound are not reproduced (the dry sound plays).
 - Online features (PSN) are not available: the game runs as a console that is not signed in.
 
 If something goes wrong
