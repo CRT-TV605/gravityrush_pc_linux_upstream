@@ -57,8 +57,6 @@ Not done yet / known gaps:
 - Audio effects that the game routes through NGS2 submixers (reverb sends, filters, envelopes)
   are not modelled: the dry sound plays.
 - Some fixed camera shots at the start of the game can be framed wrongly (under investigation).
-- A short graphics glitch (about 0.2 s, the lower part of the picture turns into blue stripes)
-  at the start of an episode 1 movie, when Kat breaks through a door, is still being investigated.
 - No systematic testing of later episodes, stability over long sessions, or other hardware.
 
 ### Roadmap

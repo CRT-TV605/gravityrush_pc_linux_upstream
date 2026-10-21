@@ -91,6 +91,17 @@ void TextureCache::RetireReadbacks() {
         [this](auto& entry) {
             if (entry.valid) {
                 entry.payload.Invalidate();
+                static const bool trace = std::getenv("GOW3_REFRESH_TRACE") != nullptr;
+                if (trace && entry.size >= (1u << 20)) {
+                    static std::atomic<u32> lines{0};
+                    if (lines.fetch_add(1, std::memory_order_relaxed) < 20000) {
+                        std::printf("Readback: [%.3f] %llx size %llx written to guest memory\n",
+                                    std::chrono::duration<double>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count(),
+                                    (unsigned long long)entry.address, (unsigned long long)entry.size);
+                    }
+                }
                 Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(entry.address),
                     entry.payload.mapped, entry.size);
                 if (entry.watched) WatchReadback<false>(entry.address, entry.size);
@@ -180,6 +191,15 @@ void TextureCache::ProcessDownloadImages() {
                 if (!pending_readbacks.CanFit(copy->size)) {
                     scheduler.Finish();
                     copy->staging.Invalidate();
+                    static const bool trace = std::getenv("GOW3_REFRESH_TRACE") != nullptr;
+                    if (trace && copy->size >= (1u << 20)) {
+                        std::printf("Readback: [%.3f] %llx size %llx written at once\n",
+                                    std::chrono::duration<double>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count(),
+                                    (unsigned long long)copy->guest_address,
+                                    (unsigned long long)copy->size);
+                    }
                     Core::Memory::Instance()->TryWriteBacking(
                         std::bit_cast<u8*>(copy->guest_address), copy->staging.mapped, copy->size);
                     runtime.GetStagingPool().FreeDeferred(copy->staging);
@@ -482,6 +502,20 @@ bool TextureCache::TouchesGpuModifiedImage(VAddr addr, size_t size) {
     return touches;
 }
 
+std::optional<std::pair<VAddr, u64>> TextureCache::FindGpuModifiedImageAround(VAddr addr,
+                                                                              size_t size) {
+    std::scoped_lock lock{mutex};
+    std::optional<std::pair<VAddr, u64>> found;
+    ForEachImageInRegion(addr, size, [&](ImageId, Image& image) {
+        const VAddr begin = image.info.guest_address;
+        if (!found && True(image.flags & ImageFlagBits::GpuModified) && begin != addr &&
+            begin < addr && addr + size <= begin + image.info.guest_size) {
+            found = std::make_pair(begin, u64{image.info.guest_size});
+        }
+    });
+    return found;
+}
+
 void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
     std::scoped_lock lock{mutex};
     const auto pages_start = PageManager::GetPageAddr(addr);
@@ -490,6 +524,26 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
         const auto image_begin = image.info.guest_address;
         const auto image_end = image.info.guest_address + image.info.guest_size;
         if (image.Overlaps(addr, size)) {
+            // gow3: GOW3_REFRESH_TRACE also logs CPU writes that make a GPU-drawn image dirty (all
+            // of it is then re-uploaded from guest memory at its next use).
+            static const bool dirty_trace = std::getenv("GOW3_REFRESH_TRACE") != nullptr;
+            if (dirty_trace && True(image.flags & ImageFlagBits::GpuModified) &&
+                False(image.flags & ImageFlagBits::CpuDirty)) {
+                static std::atomic<u32> lines{0};
+                if (lines.fetch_add(1, std::memory_order_relaxed) < 2000) {
+                    std::printf("Dirty: [%.3f] CPU write at %llx (+%llx) into drawn %ux%u %s tile %u at "
+                                "%llx size %llx\n",
+                                std::chrono::duration<double>(
+                                    std::chrono::steady_clock::now().time_since_epoch())
+                                    .count(),
+                                (unsigned long long)addr,
+                                (unsigned long long)(addr - image_begin), image.info.size.width,
+                                image.info.size.height,
+                                vk::to_string(image.info.pixel_format).c_str(),
+                                u32(image.info.tile_mode), (unsigned long long)image_begin,
+                                (unsigned long long)image.info.guest_size);
+                }
+            }
             // Modified region overlaps image, so the image was definitely accessed by this fault.
             // Untrack the image, so that the range is unprotected and the guest can write freely.
             InvalidateAlias(image);
@@ -1209,10 +1263,16 @@ void TextureCache::RefreshImage(Image& image) {
     // target refreshed from stale CPU-side data shows as garbage for a frame). GOW3_REFRESH_DUMP=1
     // also starts a frame dump (GOW3_FRAME_DUMP_TRIGGER) when a GPU-written one is re-uploaded.
     static const bool refresh_trace = std::getenv("GOW3_REFRESH_TRACE") != nullptr;
-    if (refresh_trace && image.info.size.width >= 1024 && image.info.size.height >= 512) {
+    // GOW3_REFRESH_TRACE=2: every image, whatever its size (movie diagnostics).
+    static const bool refresh_all = refresh_trace && std::getenv("GOW3_REFRESH_TRACE")[0] == '2';
+    if (refresh_trace && ((image.info.size.width >= 1024 && image.info.size.height >= 512) ||
+                          is_gpu_modified || refresh_all)) {
         static std::atomic<u32> lines{0};
-        if (lines.fetch_add(1, std::memory_order_relaxed) < 4000) {
-            std::printf("Refresh: %ux%u %s tile %u at %llx size %llx%s%s%s%s mips %zu/%u\n",
+        if (lines.fetch_add(1, std::memory_order_relaxed) < (refresh_all ? 40000u : 4000u)) {
+            std::printf("Refresh: [%.3f] %ux%u %s tile %u at %llx size %llx%s%s%s%s mips %zu/%u\n",
+                        std::chrono::duration<double>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count(),
                         image.info.size.width, image.info.size.height,
                         vk::to_string(image.info.pixel_format).c_str(), u32(image.info.tile_mode),
                         (unsigned long long)image.info.guest_address,

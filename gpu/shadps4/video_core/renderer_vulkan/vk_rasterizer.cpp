@@ -3278,13 +3278,35 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
     DrainDrawPipe();
+    // gow3: a DMA copy may read a GPU-drawn image in pieces: Gravity Rush copies a 1920x1080
+    // movie frame in four 2 MiB packets when a comic page turns into a movie. Only the piece that
+    // starts at the image's address found the image; the others copied stale guest memory, and
+    // the lower part of the picture showed old tiled data for a moment. The whole image goes into
+    // the buffer first. GOW3_DMA_IMAGE_FIX=0 turns this off (A/B tests).
+    static const bool image_fix = [] {
+        const char* env = std::getenv("GOW3_DMA_IMAGE_FIX");
+        return !(env && env[0] == '0');
+    }();
+    const auto src_image = image_fix && !src_gds
+                               ? texture_cache.FindGpuModifiedImageAround(src, num_bytes)
+                               : std::nullopt;
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
-        if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
+        if (!src_gds && !src_image && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);
             return;
         }
+    }
+    if (src_image) {
+        static std::atomic<u32> logged{0};
+        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            std::printf("DMA: copy of %x bytes at %llx reads a GPU-drawn image at %llx: whole image "
+                        "first\n",
+                        num_bytes, (unsigned long long)src, (unsigned long long)src_image->first);
+        }
+        buffer_cache.ObtainBuffer(src_image->first, static_cast<u32>(src_image->second), false,
+                                  true);
     }
     texture_cache.InvalidateMemoryFromGPU(dst, num_bytes);
     const auto* gds_buffer = buffer_cache.GetGdsBuffer();

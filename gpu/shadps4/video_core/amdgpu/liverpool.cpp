@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdlib>
 #include <chrono>
 #include <pthread.h>
 #ifndef _WIN32
@@ -285,6 +287,21 @@ void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
 void RunDmaData(Vulkan::Rasterizer& rasterizer, const u8* data) {
     const auto* dma_data = reinterpret_cast<const PM4DmaData*>(data);
     ASSERT(dma_data->command.das == 0);
+    // gow3: GOW3_DMA_TRACE=1 logs DMA copies and fills of 64 KiB or more (movie diagnostics).
+    static const bool dma_trace = std::getenv("GOW3_DMA_TRACE") != nullptr;
+    if (dma_trace && dma_data->NumBytes() >= 0x10000) {
+        static std::atomic<u32> lines{0};
+        if (lines.fetch_add(1, std::memory_order_relaxed) < 20000) {
+            std::printf("DMA: [%.3f] src_sel %u dst_sel %u src %llx dst %llx bytes %x data %x\n",
+                        std::chrono::duration<double>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count(),
+                        u32(dma_data->src_sel), u32(dma_data->dst_sel),
+                        (unsigned long long)dma_data->SrcAddress<VAddr>(),
+                        (unsigned long long)dma_data->DstAddress<VAddr>(), dma_data->NumBytes(),
+                        dma_data->data);
+        }
+    }
     if (dma_data->src_sel == DmaDataSrc::Data && dma_data->dst_sel == DmaDataDst::Gds) {
         rasterizer.FillBuffer(dma_data->dst_addr_lo, dma_data->NumBytes(),
                                dma_data->data, true);
