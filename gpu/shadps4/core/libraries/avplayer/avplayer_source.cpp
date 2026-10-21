@@ -319,7 +319,6 @@ bool AvPlayerSource::Stop() {
 
     m_current_audio_frame.reset();
     m_current_video_frame.reset();
-    m_retired_video_buffers.clear();
 
     m_video_buffers.Clear();
     m_audio_buffers.Clear();
@@ -382,19 +381,9 @@ bool AvPlayerSource::GetVideoData(AvPlayerFrameInfoEx& video_info) {
     }
 
     if (m_current_video_frame.has_value()) {
-        // gow3: the decoder rewrites a returned buffer at once, but here the GPU may still read the
-        // previous frame's buffer a few frames later (deeper pipelining than on PS4): movie frames
-        // showed torn, half of the picture from another frame. A buffer goes back to the decoder
-        // only after 3 more frames, keeping 2 of the game's buffers (usually 6) for decoding ahead.
-        m_retired_video_buffers.push_back(std::move(m_current_video_frame->buffer));
+        m_video_buffers.Push(std::move(m_current_video_frame->buffer));
         m_current_video_frame.reset();
-        const size_t keep =
-            m_max_num_video_framebuffers > 3 ? std::min<size_t>(3, m_max_num_video_framebuffers - 3) : 0;
-        while (m_retired_video_buffers.size() > keep) {
-            m_video_buffers.Push(std::move(m_retired_video_buffers.front()));
-            m_retired_video_buffers.pop_front();
-            m_video_buffers_cv.Notify();
-        }
+        m_video_buffers_cv.Notify();
     }
 
     auto frame = m_video_frames.Pop();

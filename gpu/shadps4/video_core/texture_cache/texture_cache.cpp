@@ -493,15 +493,6 @@ void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     UntrackImage(image_id);
 }
 
-bool TextureCache::TouchesGpuModifiedImage(VAddr addr, size_t size) {
-    std::scoped_lock lock{mutex};
-    bool touches = false;
-    ForEachImageInRegion(addr, size, [&](ImageId, Image& image) {
-        touches = touches || (True(image.flags & ImageFlagBits::GpuModified) && image.Overlaps(addr, size));
-    });
-    return touches;
-}
-
 std::optional<std::pair<VAddr, u64>> TextureCache::FindGpuModifiedImageAround(VAddr addr,
                                                                               size_t size) {
     std::scoped_lock lock{mutex};

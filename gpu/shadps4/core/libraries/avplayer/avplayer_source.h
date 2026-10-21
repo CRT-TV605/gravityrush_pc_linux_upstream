@@ -6,7 +6,6 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -228,8 +227,6 @@ private:
 
     std::optional<Frame> m_current_video_frame;
     std::optional<Frame> m_current_audio_frame;
-    // gow3: buffers of frames the game moved past, returned to the decoder a few frames later.
-    std::deque<GuestBuffer> m_retired_video_buffers;
 
     std::optional<s32> m_video_stream_index{};
     std::optional<s32> m_audio_stream_index{};

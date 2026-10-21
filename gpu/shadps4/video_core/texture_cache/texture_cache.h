@@ -115,7 +115,6 @@ public:
     void InvalidateMemory(VAddr addr, size_t size);
 
     /// gow3: whether a CPU write to [addr, addr + size) touches an image the GPU drew into.
-    bool TouchesGpuModifiedImage(VAddr addr, size_t size);
     /// gow3: a GPU-drawn image that holds [addr, addr + size) but does not start at addr
     /// (a copy reading it in pieces): its address and size.
     std::optional<std::pair<VAddr, u64>> FindGpuModifiedImageAround(VAddr addr, size_t size);
