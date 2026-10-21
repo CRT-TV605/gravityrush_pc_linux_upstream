@@ -1721,6 +1721,17 @@ class LauncherWindow:
 
     def page_video(self, body, foot):
         self.sec(body, 'SCREEN', first=True)
+        gpus = self.logic.vulkan_gpus()
+        if gpus or self.app.get('gpu'):
+            names = [name for name, _ in gpus]
+            options = [('', 'Auto')] + [(name, name) for name in names]
+            if self.app.get('gpu') and self.app['gpu'] not in names:
+                options.append((self.app['gpu'], self.app['gpu']))
+            self.row(body, 'Graphics card',
+                     lambda c: self.choice(c, options, self.app.get('gpu', ''), lambda v: self.set_app('gpu', v),
+                                           26).pack(side='right'),
+                     'The card the game uses when the PC has more than one, such as a laptop with integrated and '
+                     'dedicated graphics. Auto picks the most capable one. Applied at start.')
         self.row(body, 'Window mode', lambda c: Segments(self, c, WINDOW_MODES, self.ini.get('display_mode', 'borderless'),
                                                         lambda v: self.set_ini('display_mode', v)).widget.pack(side='right'))
         self.toggle_row(body, 'Vertical sync', self.ini.get('vsync', '1') == '1', lambda v: self.set_ini('vsync', '1' if v else '0'))
@@ -1920,17 +1931,6 @@ class LauncherWindow:
     def gpu_threads(self, body):
         """GPU readbacks and the port's threads (environment variables at the next start)."""
         self.sec(body, 'GPU AND THREADS')
-        gpus = self.logic.vulkan_gpus()
-        if gpus or self.app.get('gpu'):
-            names = [name for name, _ in gpus]
-            options = [('', 'Auto')] + [(name, name) for name in names]
-            if self.app.get('gpu') and self.app['gpu'] not in names:
-                options.append((self.app['gpu'], self.app['gpu']))
-            self.row(body, 'Graphics card',
-                     lambda c: self.choice(c, options, self.app.get('gpu', ''), lambda v: self.set_app('gpu', v),
-                                           26).pack(side='right'),
-                     'The card the game uses when the PC has more than one, such as a laptop with integrated and '
-                     'dedicated graphics. Auto picks the most capable one. Applied at start.')
         self.row(body, 'GPU readbacks',
                  lambda c: self.choice(c, [('', 'Auto'), ('0', 'Off'), ('1', 'Relaxed'), ('2', 'Precise')],
                                        self.app.get('readbacks', ''), lambda v: self.set_app('readbacks', v),
