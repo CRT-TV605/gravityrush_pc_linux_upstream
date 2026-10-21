@@ -392,7 +392,10 @@ static void replay_sample(PadData *d) {
             if (f) fclose(f);
             printf("Runtime: pad replay of %zu samples from %s\n",replay_count,path ? path : "(unset)");
         }
-        replay_start=now_us();
+        /* GOW3_PAD_REPLAY_SKIP_MS: start that far into the recording (a run that reaches the same
+         * point of the game another way, e.g. by the autotest's apple taps). */
+        const char *skip=getenv("GOW3_PAD_REPLAY_SKIP_MS");
+        replay_start=now_us()-(skip ? (uint64_t)strtoull(skip,NULL,10)*1000 : 0);
         replay_next=0;
     }
     const uint32_t ms=(uint32_t)((now_us()-replay_start)/1000);

@@ -14,6 +14,7 @@
 #include <sched.h>
 #include <setjmp.h>
 #include <errno.h>
+#include <xmmintrin.h>
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -139,9 +140,20 @@ void runtime_thread_attach_host(const char *name) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"%s",name ? name : "host");
 }
+/* The PS4 starts every thread with MXCSR 0x9fc0: all exceptions masked, denormals flushed to
+ * zero (FTZ) and read as zero (DAZ). Windows starts them with 0x1f80. The game relies on it: its
+ * camera keeps the right stick's turning speed decaying towards zero and checks it against 0; a
+ * denormal left by the decay (1e-45, more likely above 60 FPS) froze the camera and turned off its
+ * fixed shots. GOW3_PS4_MXCSR=0 keeps the Windows value (A/B tests). */
+void runtime_guest_fpu_init(void) {
+    static int use=-1;
+    if (use<0) { const char *e=getenv("GOW3_PS4_MXCSR"); use=!(e && e[0]=='0'); }
+    if (use) _mm_setcsr(0x9fc0);
+}
 void runtime_thread_attach_main(void) {
     GuestThread *t=runtime_thread_current();
     snprintf(t->name,sizeof(t->name),"main");
+    runtime_guest_fpu_init();
 }
 static GuestThread *find_thread(void *handle) {
     GuestThread *found=NULL;
@@ -282,6 +294,7 @@ static void *host_start(void *p) {
     GuestThread *t=p;
     attach(t);
     set_host_name(t->name);
+    runtime_guest_fpu_init();
     if (!exit_setjmp(t)) t->result=t->entry(t->argument);
     runtime_thread_keys_cleanup();
     pthread_mutex_lock(&lock); t->finished=1; ++exited; pthread_mutex_unlock(&lock);
