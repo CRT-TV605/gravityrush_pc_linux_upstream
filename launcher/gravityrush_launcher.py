@@ -320,9 +320,18 @@ def vulkan_gpus():
     if _GPUS is not None:
         return _GPUS
     _GPUS = []
-    try:
-        vk = ctypes.WinDLL('vulkan-1') if os.name == 'nt' else ctypes.CDLL('libvulkan.so.1')
-    except OSError:
+    # The packaged launcher (PyInstaller) resolves a bare DLL name in its own folder: the system's
+    # Vulkan loader is loaded by its full path first.
+    names = ([os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'vulkan-1.dll'), 'vulkan-1']
+             if os.name == 'nt' else ['libvulkan.so.1'])
+    vk = None
+    for name in names:
+        try:
+            vk = ctypes.WinDLL(name) if os.name == 'nt' else ctypes.CDLL(name)
+            break
+        except OSError as error:
+            gpu_probe_note(f'no Vulkan loader at {name}: {error!r}')
+    if vk is None:
         return _GPUS
 
     class InstanceCreateInfo(ctypes.Structure):
@@ -333,7 +342,9 @@ def vulkan_gpus():
     instance = ctypes.c_void_p()
     info = InstanceCreateInfo(1, None, 0, None, 0, None, 0, None)  # VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
     try:
-        if vk.vkCreateInstance(ctypes.byref(info), None, ctypes.byref(instance)) != 0:
+        result = vk.vkCreateInstance(ctypes.byref(info), None, ctypes.byref(instance))
+        if result != 0:
+            gpu_probe_note(f'vkCreateInstance returned {result}')
             return _GPUS
         count = ctypes.c_uint(0)
         vk.vkEnumeratePhysicalDevices(instance, ctypes.byref(count), None)
@@ -346,9 +357,21 @@ def vulkan_gpus():
             name = props.raw[20:276].split(b'\0', 1)[0].decode('utf-8', 'replace')
             _GPUS.append((name, {1: 'integrated', 2: 'discrete'}.get(kind, 'other')))
         vk.vkDestroyInstance(instance, None)
-    except (OSError, AttributeError, ValueError):
+    except (OSError, AttributeError, ValueError) as error:
         _GPUS = []
+        gpu_probe_note(f'error {error!r}')
+    gpu_probe_note(f'{len(_GPUS)} cards: {_GPUS}')
     return _GPUS
+
+
+def gpu_probe_note(text):
+    # GR_GPU_PROBE=1: what the card list found, in the launcher data folder (diagnostics).
+    if os.environ.get('GR_GPU_PROBE'):
+        try:
+            with open(CONFIG_DIR / 'gpu_probe.txt', 'a', encoding='utf-8') as f:
+                f.write(text + '\n')
+        except OSError:
+            pass
 
 
 def game_environment(s):
@@ -632,5 +655,7 @@ def main():
     launcher_ui.run(sys.modules[__name__], tk, filedialog)
 
 
+if __name__ == '__main__' and os.environ.get('GR_GPU_PROBE'):
+    vulkan_gpus()
 if __name__ == '__main__':
     main()
