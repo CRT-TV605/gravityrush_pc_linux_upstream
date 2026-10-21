@@ -159,7 +159,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', '
                 'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
                 'last_pkg': '', 'update_check': True,
                 # Play time in seconds, and the save backups made before every start.
-                'play_seconds': 0, 'save_backup': True, 'save_backup_keep': 10}
+                'save_backup': True, 'save_backup_keep': 10}
 
 # PS4 button, default key, default gamepad button (SDL names; src/runtime_pad.c). L2/R2 come
 # from the analog triggers and are not remapped on the gamepad.

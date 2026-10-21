@@ -390,7 +390,6 @@ _ROWS = [
     ('Backup created', 'Backup creato', 'Sauvegarde créée', 'Sicherung erstellt', 'Copia creada'),
     ('No saves to back up yet', 'Ancora nessun salvataggio da copiare', 'Pas encore de sauvegarde à copier', 'Noch keine Spielstände zum Sichern', 'Aún no hay partidas que copiar'),
     ('Newest first. Restoring backs up the current saves first.', 'I più recenti in alto. Il ripristino copia prima i salvataggi attuali.', 'Les plus récentes en haut. La restauration copie d’abord les sauvegardes actuelles.', 'Die neuesten oben. Beim Wiederherstellen werden die aktuellen Spielstände zuerst gesichert.', 'Las más recientes arriba. Al restaurar, primero se copian las partidas actuales.'),
-    ('Play time · {}', 'Tempo di gioco · {}', 'Temps de jeu · {}', 'Spielzeit · {}', 'Tiempo de juego · {}'),
     ('The game closed right away', 'Il gioco si è chiuso subito', 'Le jeu s’est fermé tout de suite', 'Das Spiel wurde sofort beendet', 'El juego se cerró enseguida'),
     ('The game closed unexpectedly', 'Il gioco si è chiuso in modo inatteso', 'Le jeu s’est fermé de façon inattendue', 'Das Spiel wurde unerwartet beendet', 'El juego se cerró de forma inesperada'),
     ('Exit code {}. Its last messages:', 'Codice di uscita {}. Gli ultimi messaggi:', 'Code de sortie {}. Ses derniers messages :', 'Exit-Code {}. Die letzten Meldungen:', 'Código de salida {}. Sus últimos mensajes:'),
@@ -1461,10 +1460,6 @@ class LauncherWindow:
         self.anim.add(360, rise, ease_out, delay_ms=220)
 
     # ---- status ----------------------------------------------------------------------------
-    def play_time(self):
-        seconds = int(self.app.get('play_seconds', 0) or 0)
-        return f'{seconds // 3600} h {seconds % 3600 // 60:02d} min'
-
     def refresh_status(self):
         """The sidebar's status lines: the game folder, the newest save, the display settings."""
         for item in self.status_items:
@@ -1484,8 +1479,7 @@ class LauncherWindow:
         rows = [(t('Game found · all ready'), 'check', OK_C) if found else (t('Choose the game folder'), 'alert', WARN_C),
                 (t('Last save · {}').format(time.strftime('%d/%m %H:%M', time.localtime(newest))) if newest
                  else t('No saves yet'), 'clock', TEXT3),
-                (display, 'monitor', TEXT3),
-                (t('Play time · {}').format(self.play_time()), 'clock', TEXT3)]
+                (display, 'monitor', TEXT3)]
         self.status_photos = []
         y = STATUS_Y
         for index, (text, icon, color) in enumerate(rows):
@@ -2360,7 +2354,6 @@ class LauncherWindow:
             self.toast(t('Could not: {}').format(error))
             return
         self.job = logic.GameJob(self.process)
-        self.started_at = time.time()
         self.reached_game = False
         threading.Thread(target=self.read_output, args=(self.process,), daemon=True).start()
         self.modal(t('Starting…'), t('Preparing the game'), [], gauge=True)
@@ -2452,10 +2445,6 @@ class LauncherWindow:
             self.job = None
         # The in-game menu may have changed gravityrush.ini: later saves start from the file.
         self.ini, self.ini_lines = self.logic.load_ini()
-        played = time.time() - getattr(self, 'started_at', time.time())
-        if getattr(self, 'reached_game', False):
-            self.app['play_seconds'] = int(self.app.get('play_seconds', 0) or 0) + int(played)
-            self.save()
         self.close_modal()
         self.refresh_status()
         if getattr(self, 'stepped_aside', False):
