@@ -20,7 +20,7 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: version 0.1.5 — the opening, the first episode and the city work,
+**Status: version 0.1.6 — the opening, the first episode and the city work,
 with sound and saves. Not every part of the game has been tested yet.**
 
 **[Download the latest release](https://github.com/LucaPazienza/gravityrush_pc/releases/latest)** —
