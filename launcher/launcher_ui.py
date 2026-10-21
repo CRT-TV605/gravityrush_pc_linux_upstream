@@ -336,6 +336,12 @@ _ROWS = [
     ('Close', 'Chiudi', 'Fermer', 'Schließen', 'Cerrar'),
     # Advanced: GPU readbacks and threads.
     ('GPU AND THREADS', 'GPU E THREAD', 'GPU ET THREADS', 'GPU UND THREADS', 'GPU E HILOS'),
+    ('Graphics card', 'Scheda video', 'Carte graphique', 'Grafikkarte', 'Tarjeta gráfica'),
+    ('The card the game uses when the PC has more than one, such as a laptop with integrated and dedicated graphics. Auto picks the most capable one. Applied at start.',
+     'La scheda usata dal gioco quando il PC ne ha più di una, come i portatili con grafica integrata e dedicata. Automatico sceglie la più potente. Applicata all’avvio.',
+     'La carte utilisée par le jeu quand le PC en a plusieurs, comme les portables avec graphismes intégrés et dédiés. Auto choisit la plus puissante. Appliqué au démarrage.',
+     'Die Karte, die das Spiel nutzt, wenn der PC mehrere hat, etwa Laptops mit integrierter und dedizierter Grafik. Auto wählt die leistungsstärkste. Wird beim Start übernommen.',
+     'La tarjeta que usa el juego cuando el PC tiene más de una, como los portátiles con gráficos integrados y dedicados. Auto elige la más potente. Se aplica al iniciar.'),
     ('Auto', 'Automatico', 'Auto', 'Automatisch', 'Automático'),
     ('On', 'Attivo', 'Activé', 'An', 'Activado'),
     ('Relaxed', 'Rilassate', 'Souples', 'Locker', 'Relajadas'),
@@ -1914,6 +1920,17 @@ class LauncherWindow:
     def gpu_threads(self, body):
         """GPU readbacks and the port's threads (environment variables at the next start)."""
         self.sec(body, 'GPU AND THREADS')
+        gpus = self.logic.vulkan_gpus()
+        if gpus or self.app.get('gpu'):
+            names = [name for name, _ in gpus]
+            options = [('', 'Auto')] + [(name, name) for name in names]
+            if self.app.get('gpu') and self.app['gpu'] not in names:
+                options.append((self.app['gpu'], self.app['gpu']))
+            self.row(body, 'Graphics card',
+                     lambda c: self.choice(c, options, self.app.get('gpu', ''), lambda v: self.set_app('gpu', v),
+                                           26).pack(side='right'),
+                     'The card the game uses when the PC has more than one, such as a laptop with integrated and '
+                     'dedicated graphics. Auto picks the most capable one. Applied at start.')
         self.row(body, 'GPU readbacks',
                  lambda c: self.choice(c, [('', 'Auto'), ('0', 'Off'), ('1', 'Relaxed'), ('2', 'Precise')],
                                        self.app.get('readbacks', ''), lambda v: self.set_app('readbacks', v),
@@ -1945,7 +1962,7 @@ class LauncherWindow:
 
         def restore():
             for key, value in (('readbacks', ''), ('draw_pipe', ''), ('prep_workers', ''), ('copy_threads', ''),
-                               ('record_thread', True)):
+                               ('record_thread', True), ('gpu', '')):
                 self.app[key] = value
             self.ini['deferred_readback'], self.ini['stale_readback'] = '1', '0'
             self.save()

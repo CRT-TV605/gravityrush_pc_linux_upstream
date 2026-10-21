@@ -153,7 +153,7 @@ FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('120', ('120',)), ('240', ('240
 APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', ''), 'user_dir': '',
                 'mods_dir': '', 'mods_enabled': True, 'patches_dir': '', 'language': '1',
                 'player_name': '', 'hdr': False, 'draw_pipe': '', 'readbacks': '',
-                'prep_workers': '', 'copy_threads': '', 'record_thread': True,
+                'prep_workers': '', 'copy_threads': '', 'record_thread': True, 'gpu': '',
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False, 'f12_quits': False,
                 'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
@@ -310,6 +310,47 @@ def game_profile_of(folder):
     return title_id, game_profile(title_id)
 
 
+_GPUS = None
+
+
+def vulkan_gpus():
+    """The graphics cards as Vulkan lists them (the game's GOW3_GPU_ID counts in this order):
+    [(name, kind)], kind 'discrete', 'integrated' or 'other'. Empty without a Vulkan driver."""
+    global _GPUS
+    if _GPUS is not None:
+        return _GPUS
+    _GPUS = []
+    try:
+        vk = ctypes.WinDLL('vulkan-1') if os.name == 'nt' else ctypes.CDLL('libvulkan.so.1')
+    except OSError:
+        return _GPUS
+
+    class InstanceCreateInfo(ctypes.Structure):
+        _fields_ = [('sType', ctypes.c_int), ('pNext', ctypes.c_void_p), ('flags', ctypes.c_uint),
+                    ('pApplicationInfo', ctypes.c_void_p), ('enabledLayerCount', ctypes.c_uint),
+                    ('ppEnabledLayerNames', ctypes.c_void_p), ('enabledExtensionCount', ctypes.c_uint),
+                    ('ppEnabledExtensionNames', ctypes.c_void_p)]
+    instance = ctypes.c_void_p()
+    info = InstanceCreateInfo(1, None, 0, None, 0, None, 0, None)  # VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+    try:
+        if vk.vkCreateInstance(ctypes.byref(info), None, ctypes.byref(instance)) != 0:
+            return _GPUS
+        count = ctypes.c_uint(0)
+        vk.vkEnumeratePhysicalDevices(instance, ctypes.byref(count), None)
+        devices = (ctypes.c_void_p * count.value)()
+        vk.vkEnumeratePhysicalDevices(instance, ctypes.byref(count), devices)
+        for device in devices[:count.value]:
+            props = ctypes.create_string_buffer(2048)  # VkPhysicalDeviceProperties (824 bytes)
+            vk.vkGetPhysicalDeviceProperties(ctypes.c_void_p(device), props)
+            kind = int.from_bytes(props.raw[16:20], 'little')  # deviceType
+            name = props.raw[20:276].split(b'\0', 1)[0].decode('utf-8', 'replace')
+            _GPUS.append((name, {1: 'integrated', 2: 'discrete'}.get(kind, 'other')))
+        vk.vkDestroyInstance(instance, None)
+    except (OSError, AttributeError, ValueError):
+        _GPUS = []
+    return _GPUS
+
+
 def game_environment(s):
     env = dict(os.environ)
     env['GOW3_GAME_DIR'] = s['game_dir']
@@ -339,6 +380,12 @@ def game_environment(s):
             env[name] = str(s[key])
     if not s.get('record_thread', True):
         env['GOW3_VK_RECORD_THREAD'] = '0'
+    # The card is saved by name: its index changes when cards are added or removed, and a missing
+    # one falls back to the game's own choice (an index past the list would stop the game).
+    if s.get('gpu'):
+        names = [name for name, _ in vulkan_gpus()]
+        if s['gpu'] in names:
+            env['GOW3_GPU_ID'] = str(names.index(s['gpu']))
     env['GOW3_BACKGROUND_WARMUP'] = '1' if s.get('background_warmup', True) else '0'
     env['GOW3_PARALLEL_WARMUP'] = '1' if s.get('parallel_warmup', True) else '0'
     env['GOW3_PIPELINE_BINARIES'] = '1' if s.get('pipeline_binary_cache', True) else '0'
