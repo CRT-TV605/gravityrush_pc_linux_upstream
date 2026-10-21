@@ -54,7 +54,7 @@ What works today:
 
 Not done yet / known gaps:
 
-- No systematic testing of later episodes, stability over long sessions, or other hardware.
+- The whole story has been played through (on 0.1.5); only Nvidia graphics cards have been tested so far.
 
 ### Roadmap
 
