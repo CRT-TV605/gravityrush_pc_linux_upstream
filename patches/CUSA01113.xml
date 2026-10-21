@@ -650,4 +650,10 @@
             <Line Type="bytes" Address="0x0042867f" Value="00100000"/>
         </PatchList>
     </Metadata>
+    <Metadata Title="Gravity Rush Remastered" Name="Bug Fix - Gravity Shift Camera" Note="The roll correction of the gravity-shift camera follows the frame time: above 60 FPS the view no longer swings left and right." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin" isEnabled="true">
+        <PatchList>
+            <Line Type="bytes" Address="0x0049413e" Value="c5fa5905ee425501c5fa5905069cfdff"/>
+            <Line Type="bytes" Address="0x0046dd54" Value="666606c0"/>
+        </PatchList>
+    </Metadata>
 </Patch>

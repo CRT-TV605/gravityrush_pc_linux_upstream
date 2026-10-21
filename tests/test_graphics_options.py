@@ -57,6 +57,10 @@ class GraphicsOptionsTest(unittest.TestCase):
         native = g.startup_options({'engine_fps': '60'})
         self.assertEqual(g.patch_names(['Resolution Patch - 4K', 'Skip Any Video With X Button'], native),
                          ['Bug Fix - Texture Corruption Fix', 'Skip Any Video With X Button'])
+        # The camera fix is always added when the game's file has it, once.
+        self.assertEqual(g.patch_names(['Bug Fix - Gravity Shift Camera'], native, False, True),
+                         ['Bug Fix - Gravity Shift Camera'])
+        self.assertEqual(g.patch_names([], native, False, True), ['Bug Fix - Gravity Shift Camera'])
 
     def test_environment(self):
         env = g.environment(g.startup_options({'stale_readback': '0'}))

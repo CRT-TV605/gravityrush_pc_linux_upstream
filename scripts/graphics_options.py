@@ -22,6 +22,8 @@ SHADOW_PREFIX = 'Shadow Quality'
 # gravityrush.ini shadow_quality -> shadow map patch (patches/CUSA01113.xml); standard is the game's.
 SHADOW_PATCHES = {'high': 'Shadow Quality - 4096'}
 TEXTURE_FIX = 'Bug Fix - Texture Corruption Fix'
+# Always applied (not a setting): the gravity-shift camera's roll correction follows the frame time.
+CAMERA_FIX = 'Bug Fix - Gravity Shift Camera'
 
 
 def read_ini(path):
@@ -95,7 +97,7 @@ def prepare(config, state_path):
     return options, reverted
 
 
-def patch_names(names, options, texture_fix_available=True):
+def patch_names(names, options, texture_fix_available=True, camera_fix_available=False):
     """The launcher's patch list with the resolution and frame rate patches of `options`."""
     names = [n for n in names if not n.startswith((RESOLUTION_PREFIX, FPS_PREFIX, SHADOW_PREFIX))]
     resolution = options['render_resolution']
@@ -107,6 +109,8 @@ def patch_names(names, options, texture_fix_available=True):
         names.append(shadow)
     if options['engine_fps'] != '60':
         names.append(f'{FPS_PREFIX} - {options["engine_fps"]} FPS')
+    if camera_fix_available and CAMERA_FIX not in names:
+        names.append(CAMERA_FIX)
     return names
 
 

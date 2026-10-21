@@ -2,6 +2,7 @@
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -298,6 +299,13 @@ void CameraMotion::OnConstants(const float* data) {
     frame_has_camera = true;
 }
 
+// The last camera for the runtime's memory diagnostics (GOW3_MEM_CMD scan): position, then the
+// right, up and forward axes, in world space.
+extern "C" {
+volatile float gow3_camera_world[12];
+volatile unsigned gow3_camera_seq;
+}
+
 bool CameraMotion::OnGravityRushCamera(const float* source, float yscale, float zscale,
                                        float zoffset) {
     // Called for every scene draw: the first one of a frame is the main camera. The constants
@@ -369,6 +377,29 @@ bool CameraMotion::OnGravityRushCamera(const float* source, float yscale, float 
         if (moved > 20.0f * 20.0f || facing < 0.7f) {
             previous.valid = false;
         }
+    }
+    for (int r = 0; r < 3; ++r) {
+        gow3_camera_world[r] = current.inv_view[r * 4 + 3];
+        for (int c = 0; c < 3; ++c) {
+            gow3_camera_world[3 + c * 3 + r] = current.inv_view[r * 4 + c];
+        }
+    }
+    gow3_camera_seq = gow3_camera_seq + 1;
+    // GOW3_CAMERA_LOG=1: the camera of every frame (position, forward, up) for timing tests.
+    static const bool camera_log = [] {
+        const char* e = std::getenv("GOW3_CAMERA_LOG");
+        return e && *e && *e != '0';
+    }();
+    if (camera_log) {
+        static u64 camera_frame = 0;
+        const double ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+        std::printf("Camera log %llu %.2f pos %.4f %.4f %.4f fwd %.5f %.5f %.5f up %.5f %.5f %.5f\n",
+                    (unsigned long long)camera_frame++, ms, current.inv_view[3],
+                    current.inv_view[7], current.inv_view[11], current.inv_view[2],
+                    current.inv_view[6], current.inv_view[10], current.inv_view[1],
+                    current.inv_view[5], current.inv_view[9]);
     }
     static u32 log_counter = 0;
     if (log_counter++ % 1800 == 0) {

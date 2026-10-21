@@ -171,7 +171,11 @@ def main():
             # gravityrush.ini decides the resolution and frame rate patches (in-game menu, launcher).
             import xml.etree.ElementTree as ET
             known = {m.get('Name') for m in ET.parse(profile[1]).getroot().iter('Metadata')}
-            names = graphics_options.patch_names(names, graphics, graphics_options.TEXTURE_FIX in known)
+            # GOW3_CAMERA_FIX=0 leaves the gravity-shift camera fix out (A/B tests).
+            names = graphics_options.patch_names(names, graphics, graphics_options.TEXTURE_FIX in known,
+                                                 graphics_options.CAMERA_FIX in known and env.get('GOW3_CAMERA_FIX') != '0')
+            if env.get('GOW3_CAMERA_FIX') == '0':
+                names = [n for n in names if n != graphics_options.CAMERA_FIX]
             env['GOW3_PATCHES'] = ';'.join(names)
             env['GOW3_PATCHES_ONLY'] = '1'
             dmem, vblank = patch_requirements(profile[1], names, profile[2])

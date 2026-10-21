@@ -14,6 +14,8 @@
 #include <sched.h>
 #include <setjmp.h>
 #include <errno.h>
+#include <math.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -496,6 +498,8 @@ static void dump_threads(const char *why) {
     free(e);
 }
 
+#include "gr_memwatch.inc"
+
 /* GOW3_POKE (diagnostics): writes into the game image, again every 100 ms (the game may reset
  * them): "0x237bd58=1" stores a 32-bit value, "0x16c4412|=4" ORs a byte; comma-separated.
  * Used to switch on the game's own debug logs. */
@@ -537,6 +541,7 @@ static void *dump_watcher(void *arg) {
          * lose the last lines of the log. */
         fflush(stdout);
         if (pokes) apply_pokes(pokes);
+        mw_poll();
         int down=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
         if (down && !was_down) dump_threads("F12");
         was_down=down;

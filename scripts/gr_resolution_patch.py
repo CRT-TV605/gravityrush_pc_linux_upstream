@@ -109,6 +109,32 @@ def check_shadow(image):
             raise SystemExit(f'{offset:#x}: not the expected bytes (another eboot build?)')
 
 
+# Gravity-shift camera (the camera class at 0x926b0): while Kat floats it keeps correcting its roll.
+# Every ~1.2 s it computes a correction angle once (0x9413e: angle/2 = X * -0.07 * 0.5, made into a
+# quaternion) and then applies a share of it at every frame for 1.2 s (0x94308: q = dq * q). The
+# angle is per frame, so the total correction grows with the frame rate: about 1.6 times the error
+# at 60 FPS (settles), 3.2 times at 120 FPS (the view swings left and right more each time). The
+# patch scales the angle with the game's frame time (0x15e8434, a 32-frame average):
+# X * dt * -2.1, which is the original value at 60 FPS.
+CAMERA_SITE = 0x9413e
+CAMERA_ORIGINAL = bytes.fromhex('c5fa5905f27af900c5fa5905ce7af900')  # vmulss [-0.07]; vmulss [0.5]
+CAMERA_DT = 0x15e8434
+CAMERA_CONSTANT = 0x6dd54  # unreachable nop padding after a ret (0x6dd51-0x6dd5f)
+
+
+def camera_writes():
+    """[(image offset, bytes)] of the gravity-shift camera fix."""
+    def vmulss_xmm0(site, target):
+        return bytes.fromhex('c5fa5905') + struct.pack('<i', target - (site + 8))
+    return [(CAMERA_SITE, vmulss_xmm0(CAMERA_SITE, CAMERA_DT) + vmulss_xmm0(CAMERA_SITE + 8, CAMERA_CONSTANT)),
+            (CAMERA_CONSTANT, struct.pack('<f', -0.07 * 0.5 * 60))]
+
+
+def check_camera(image):
+    if image[CAMERA_SITE:CAMERA_SITE + 16] != CAMERA_ORIGINAL or image[CAMERA_CONSTANT - 3:CAMERA_CONSTANT + 12] != bytes([0x90]) * 15:
+        raise SystemExit(f'{CAMERA_SITE:#x}: not the expected bytes (another eboot build?)')
+
+
 def main():
     image = (PORT / 'out/re/image.bin').read_bytes()
     for offset, what in SITES:
@@ -145,6 +171,15 @@ def main():
         for offset, data in shadow_writes(size):
             lines.append(f'            <Line Type="bytes" Address="{EBOOT_BASE + offset:#010x}" Value="{data.hex()}"/>')
         lines += ['        </PatchList>', '    </Metadata>']
+    check_camera(image)
+    lines.append('    <Metadata Title="Gravity Rush Remastered" Name="Bug Fix - Gravity Shift Camera" '
+                 'Note="The roll correction of the gravity-shift camera follows the frame time: above '
+                 '60 FPS the view no longer swings left and right." Author="LucaPazienza" '
+                 f'PatchVer="1.0" AppVer="{APP_VER}" AppElf="eboot.bin" isEnabled="true">')
+    lines.append('        <PatchList>')
+    for offset, data in camera_writes():
+        lines.append(f'            <Line Type="bytes" Address="{EBOOT_BASE + offset:#010x}" Value="{data.hex()}"/>')
+    lines += ['        </PatchList>', '    </Metadata>']
     lines.append('</Patch>')
     out = PORT / 'patches/CUSA01113.xml'
     out.write_text('\n'.join(lines) + '\n', encoding='utf-8', newline='\n')

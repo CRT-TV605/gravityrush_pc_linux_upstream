@@ -59,8 +59,8 @@ class GameProfileTests(unittest.TestCase):
         self.assertIsNone(game_profile(None))
 
     def test_gravity_rush_defaults_and_extras(self):
-        # The game's file has no default patches; the launcher's selection is exact.
-        self.assertEqual(selected_patches(GR, '01.00', ''), [])
+        # The game's file has one default patch (the camera fix); the launcher's selection is exact.
+        self.assertEqual(selected_patches(GR, '01.00', ''), ['Bug Fix - Gravity Shift Camera'])
         self.assertEqual(selected_patches(GR, '01.00', 'Resolution Patch - 4K', only=True),
                          ['Resolution Patch - 4K'])
         with self.assertRaises(ValueError):
