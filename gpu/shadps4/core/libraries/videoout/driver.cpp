@@ -604,8 +604,12 @@ void VideoOutDriver::DrawLastFrame() {
     }, true);
 }
 
+// gow3: the game's flips so far, for the runtime's stall watchdog (GOW3_STALL_DUMP).
+extern "C" volatile unsigned long long gow3_flip_count = 0;
+
 bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
                                 bool is_eop /*= false*/) {
+    __atomic_add_fetch(&gow3_flip_count, 1, __ATOMIC_RELAXED);
     // gow3: GOW3_FLIP_LOG=1 prints the game's flips per second (its own update rate), once a second.
     static const bool flip_log = std::getenv("GOW3_FLIP_LOG") != nullptr;
     if (flip_log) {
