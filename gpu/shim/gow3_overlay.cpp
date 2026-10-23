@@ -912,6 +912,12 @@ bool HandleEvent(const SDL_Event& event) {
         }();
         if (down && !event.key.repeat && capture_key && event.key.key == SDLK_F11) {
             Vulkan::FrameCapture::Request();
+            // gow3: the frame's pixels too, when frame dumps are set up (GOW3_FRAME_DUMP_TRIGGER).
+            if (const char* trigger = std::getenv("GOW3_FRAME_DUMP_TRIGGER")) {
+                if (std::FILE* f = std::fopen(trigger, "wb")) {
+                    std::fclose(f);
+                }
+            }
             return true;
         }
         // F12: saves the next frame (GOW3_FRAME_DUMP_TRIGGER, set by the launcher) for bug reports.
