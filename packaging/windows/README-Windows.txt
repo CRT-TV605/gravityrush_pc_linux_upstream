@@ -1,9 +1,9 @@
-Gravity Rush Remastered (PS4) for PC - version 0.1.7
+Gravity Rush Remastered (PS4) for PC - version 0.1.8
 ====================================================
 
-A native PC port: the game's own code runs on your processor, with no emulator. This is an early
-version: the opening, the first episode and the city of Hekseville have been played through on
-one PC; later parts of the game have not been tested yet.
+A native PC port: the game's own code runs on your processor, with no emulator. The whole story
+has been played from start to finish with this port. Only Nvidia graphics cards have been tested
+so far.
 
 No game files are included. You need your own copy of Gravity Rush Remastered (PS4), as an
 unpacked game folder (eboot.bin, sce_module, sce_sys), prepared with your own tools. Tested with

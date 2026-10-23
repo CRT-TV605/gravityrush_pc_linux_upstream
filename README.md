@@ -20,8 +20,8 @@ and shaders to Vulkan.
 
 ## Current Status
 
-**Status: version 0.1.7 — the opening, the first episode and the city work,
-with sound and saves. Not every part of the game has been tested yet.**
+**Status: version 0.1.8 — the whole story has been played from start to finish with this port,
+with sound and saves.**
 
 **[Download the latest release](https://github.com/LucaPazienza/gravityrush_pc/releases/latest)** —
 see [Playing](#playing) below.
@@ -30,8 +30,8 @@ Tested on Windows 11 with an NVIDIA RTX 5070 Ti, an Xbox One controller and a Du
 
 What works today:
 
-- **Boot and story:** title flow, the opening apple scene, the opening movie, episode 1 and the
-  city of Hekseville; dialogue, menus and trophies.
+- **Boot and story:** the whole game, from the title and the opening apple scene to the ending,
+  has been played through with this port; dialogue, menus, movies and the upgrade shop.
 - **Audio:** movies (AvPlayer) and the game's own sound engine on top of a real NGS2 sampler:
   PCM effects, ATRAC9 streamed music and ambience (wind, city), voice volume, pitch and panning,
   pause and resume, a mastering limiter, and a 7.1-to-stereo downmix for stereo devices.
@@ -54,7 +54,8 @@ What works today:
 
 Not done yet / known gaps:
 
-- The whole story has been played through (on 0.1.5); only Nvidia graphics cards have been tested so far.
+- Only Nvidia graphics cards have been tested so far.
+- Trophies are not saved or shown yet.
 
 ### Roadmap
 
@@ -67,7 +68,7 @@ Not done yet / known gaps:
 - [x] Render resolution up to 4K, high-quality shadows
 - [x] First preview release
 - [x] First official release (0.1.2), with automatic updates
-- [ ] Play through the whole story and fix what breaks
+- [x] Play through the whole story and fix what breaks
 - [ ] Trophies
 - [ ] Performance and stability work
 
