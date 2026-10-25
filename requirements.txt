@@ -1,0 +1,4 @@
+# Python packages for run.py, scripts/ and the launcher (Windows and Linux): pip install -r requirements.txt
+# Tkinter comes with Python (Linux: python3-tk / python3-tkinter / tk). Packaging also uses pyinstaller.
+pillow        # the launcher's drawing, icons and F12 frame dumps
+cryptography  # scripts/pkg_extract.py (unpacking a .pkg in a source tree)

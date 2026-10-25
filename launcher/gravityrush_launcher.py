@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Gravity Rush Remastered (PS4, CUSA01113) launcher for Windows (Tkinter).
+"""Gravity Rush Remastered (PS4, CUSA01113) launcher for Windows and Linux (Tkinter).
 
 Every setting of the port in one window: the game (a folder or the .pkg, unpacked once), saves,
 gravityrush.ini (display, frame rate, shaders, GPU data), start-up options passed to run.py as
 environment variables, mods, third-party patches and controls.
-Launcher options live in %APPDATA%/gravityrush-launcher/settings.json.
+Launcher options live in %APPDATA%/gravityrush-launcher/settings.json (Windows) or
+$XDG_CONFIG_HOME/gravityrush-launcher/settings.json (Linux, ~/.config).
 
-Frozen with PyInstaller, "Gravity Rush Launcher.exe" also runs the game without the window (`--play`,
-which "Gravity Rush.exe" uses), run.py (`--run`) and the preparation scripts (`--script`), so a
-packaged port needs no Python.
+Frozen with PyInstaller, "Gravity Rush Launcher.exe" (the AppImage on Linux) also runs the game
+without the window (`--play`, which "Gravity Rush.exe" uses), run.py (`--run`) and the preparation
+scripts (`--script`), so a packaged port needs no Python.
 """
 import ctypes
 import hashlib
@@ -33,13 +34,18 @@ GAME_EXE = 'Gravity Rush.exe'               # packaging/windows/play.c: plays wi
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
 import save_backup  # noqa: E402,F401  (scripts/; launcher_ui uses it)
-DATA_DIR = Path(os.environ.get('GOW3_DATA_DIR', PORT_DIR))
-CONFIG_DIR = Path(os.environ.get('APPDATA') or os.environ.get('USERPROFILE') or PORT_DIR) / 'gravityrush-launcher'
+import platform_paths  # noqa: E402
+WINDOWS = platform_paths.WINDOWS
+# Windows: the port folder; Linux: ~/.local/share/gravityrush (the AppImage is read-only).
+DATA_DIR = platform_paths.data_dir(PORT_DIR)
+CONFIG_DIR = platform_paths.config_dir()
 CONFIG_FILE = CONFIG_DIR / 'settings.json'
 MOD_PRESETS = DATA_DIR / 'mods_presets.json'
 APP_NAME = 'Gravity Rush'
 MAX_LOG_LINES = 6000
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+# Linux: the game runs in its own process group, which "Stop the game" ends (GameJob).
+NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 # This build. A release package's launcher looks for a newer release on GitHub when it opens
 # (Advanced > Updates) and installs it when the player agrees. Pre-releases count too (the first
 # releases were previews). Tests: GR_UPDATE_API serves another release list, GR_UPDATE_TEST_FROM
@@ -49,11 +55,16 @@ RELEASES_API = os.environ.get('GR_UPDATE_API') or \
     'https://api.github.com/repos/LucaPazienza/gravityrush_pc/releases?per_page=20'
 RELEASES_PAGE = 'https://github.com/LucaPazienza/gravityrush_pc/releases'
 INSTALLED_VERSION = os.environ.get('GR_UPDATE_TEST_FROM') or VERSION
-# The Windows package of a release (packaging/windows/package.sh).
-RELEASE_ASSET = re.compile(r'GravityRush-PC-[0-9.]+-Windows\.zip', re.IGNORECASE)
+# This system's package of a release (packaging/windows/package.sh, packaging/linux/package.sh).
+RELEASE_ASSET = re.compile(r'GravityRush-PC-[0-9.]+-Windows\.zip' if WINDOWS else
+                           r'GravityRush-PC-[0-9.]+-Linux-x86_64\.AppImage', re.IGNORECASE)
 UPDATE_DIR = Path(tempfile.gettempdir()) / 'gravityrush-update'
 # Updates install only over a release package (runtime in bin/); a development copy updates with git.
-IS_RELEASE = FROZEN and (PORT_DIR / 'bin' / 'gravityrush-runtime.exe').is_file() and not (PORT_DIR / 'build.sh').exists()
+IS_RELEASE = FROZEN and (PORT_DIR / 'bin' / f'gravityrush-runtime{platform_paths.EXE}').is_file() and \
+    not (PORT_DIR / 'build.sh').exists()
+# The Windows package replaces itself; an AppImage is one read-only file: the player downloads
+# the new one from the releases page.
+SELF_UPDATE = IS_RELEASE and WINDOWS
 # Never copied over an installation by an update (the package does not hold them either): what
 # players create next to the launcher, at the top of the folder.
 USER_FILES = ('user', 'out', 'mods', 'gravityrush.ini', 'mods.json', 'mods_presets.json', 'patches.json', 'last_run.log')
@@ -64,6 +75,8 @@ USER_FILES = ('user', 'out', 'mods', 'gravityrush.ini', 'mods.json', 'mods_prese
 
 def attach_stdio():
     """A windowed executable starts without sys.stdout; inherited pipes or a console still exist."""
+    if not WINDOWS:
+        return
     import msvcrt
     for name, std in (('stdout', -11), ('stderr', -12)):
         if getattr(sys, name) is not None:
@@ -126,6 +139,13 @@ def _(en, ru=None):
 
 
 def windows_language():
+    """The system's language: Windows' display language, else the locale (LC_ALL, LANG, ...)."""
+    if not WINDOWS:
+        for name in ('LC_ALL', 'LC_MESSAGES', 'LANG', 'LANGUAGE'):
+            code = os.environ.get(name, '').split(':')[0].split('_')[0].split('.')[0].lower()
+            if code:
+                return code if code in {c for c, _names in lang.LANGUAGE_NAMES if c} else 'en'
+        return 'en'
     try:
         primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3ff
     except (AttributeError, OSError):
@@ -287,6 +307,7 @@ def save_ini(values, lines):
     if not lines:
         out.append('# Gravity Rush settings (in-game menu: Insert / R3+L2)')
     out += [f'{key}={value}' for key, value in values.items() if key not in written]
+    ini_path().parent.mkdir(parents=True, exist_ok=True)  # Linux: a new data folder
     ini_path().write_text('\n'.join(out) + '\n', encoding='utf-8')
 
 
@@ -374,8 +395,72 @@ def gpu_probe_note(text):
             pass
 
 
+def host_environment(env=None):
+    """os.environ without PyInstaller's LD_LIBRARY_PATH (scripts/platform_paths.py)."""
+    return platform_paths.host_environment(env)
+
+
+def open_folder(path):
+    """Shows a folder in Explorer or the desktop's file manager (xdg-open)."""
+    if WINDOWS:
+        os.startfile(str(path))
+        return
+    subprocess.Popen(['xdg-open', str(path)], env=host_environment(), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+class NativeDialogs:
+    """Linux file choosers: the desktop's own (zenity on GNOME and others, kdialog on KDE) when
+    installed, else Tk's. The same calls as tkinter.filedialog; '' when cancelled."""
+
+    def __init__(self, filedialog):
+        self.tk_dialogs = filedialog
+        desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').upper()
+        order = ('kdialog', 'zenity') if 'KDE' in desktop else ('zenity', 'kdialog')
+        self.tool = next((tool for tool in order if shutil.which(tool)), None)
+
+    def ask(self, zenity, kdialog):
+        command = [self.tool, *(zenity if self.tool == 'zenity' else kdialog)]
+        try:
+            result = subprocess.run(command, env=host_environment(), stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True)
+        except OSError:
+            return None  # gone since: Tk's dialog
+        return result.stdout.strip() if result.returncode == 0 else ''
+
+    @staticmethod
+    def patterns(filetypes):
+        return [(name, pattern) for name, pattern in filetypes or []]
+
+    def askdirectory(self, initialdir='', **options):
+        start = initialdir or str(Path.home())
+        chosen = self.tool and self.ask(['--file-selection', '--directory', f'--filename={start}/'],
+                                        ['--getexistingdirectory', start])
+        return self.tk_dialogs.askdirectory(initialdir=initialdir, **options) if chosen is None or not self.tool else chosen
+
+    def askopenfilename(self, filetypes=(), **options):
+        kinds = self.patterns(filetypes)
+        chosen = self.tool and self.ask(['--file-selection', *(f'--file-filter={n} | {p}' for n, p in kinds)],
+                                        ['--getopenfilename', str(Path.home()), ' '.join(p for _n, p in kinds)])
+        return self.tk_dialogs.askopenfilename(filetypes=filetypes, **options) if chosen is None or not self.tool else chosen
+
+    def asksaveasfilename(self, filetypes=(), initialfile='', **options):
+        kinds = self.patterns(filetypes)
+        start = str(Path.home() / initialfile)
+        chosen = self.tool and self.ask(['--file-selection', '--save', '--confirm-overwrite', f'--filename={start}',
+                                         *(f'--file-filter={n} | {p}' for n, p in kinds)],
+                                        ['--getsavefilename', start, ' '.join(p for _n, p in kinds)])
+        if chosen is None or not self.tool:
+            return self.tk_dialogs.asksaveasfilename(filetypes=filetypes, initialfile=initialfile, **options)
+        if chosen and options.get('defaultextension') and not Path(chosen).suffix:
+            chosen += options['defaultextension']
+        return chosen
+
+
 def game_environment(s):
-    env = dict(os.environ)
+    env = host_environment()
+    if not WINDOWS:  # run.py finds the same folder by itself; passed on so both always agree
+        env.setdefault('GOW3_DATA_DIR', str(DATA_DIR))
     env['GOW3_GAME_DIR'] = s['game_dir']
     # The launcher's patch selection is the whole list (run.py, patches.py).
     title_id, profile = game_profile_of(s['game_dir'])
@@ -448,7 +533,7 @@ def game_environment(s):
     return env
 
 
-class GameJob:
+class WindowsJob:
     """A Windows job holding run.py and everything it starts: gravityrush-runtime.exe and the launches made
     by the in-game restart (no longer descendants of the first process)."""
 
@@ -467,6 +552,34 @@ class GameJob:
         if self.handle:
             ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(self.handle))
             self.handle = None
+
+
+class ProcessGroup:
+    """WindowsJob on Linux: run.py's process group (NEW_GROUP), which the launches made by the
+    in-game restart stay in. SIGTERM, then SIGKILL if it is still there 5 s later."""
+
+    def __init__(self, process):
+        self.group = process.pid
+
+    def terminate(self):
+        import signal
+        import threading
+
+        def send(sig):
+            try:
+                os.killpg(self.group, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+        send(signal.SIGTERM)
+        timer = threading.Timer(5, send, (signal.SIGKILL,))
+        timer.daemon = True
+        timer.start()
+
+    def close(self):
+        pass
+
+
+GameJob = WindowsJob if WINDOWS else ProcessGroup
 
 
 def convert_frame_dumps(user_dir):
@@ -521,7 +634,7 @@ def http_request(url):
 
 
 def latest_release():
-    """The newest published release with a Windows package (pre-releases count): a dict with
+    """The newest published release with this system's package (pre-releases count): a dict with
     version, url (the package), name, size, sha256 (or sha256_url) and page."""
     with urllib.request.urlopen(http_request(RELEASES_API), timeout=15) as response:
         releases = json.load(response)
@@ -544,7 +657,7 @@ def latest_release():
                 'sha256': digest[7:] if digest.startswith('sha256:') else None,
                 'sha256_url': checksum.get('browser_download_url')}
     if not best:
-        raise ValueError('no release with a Windows package')
+        raise ValueError('no release with a package for this system')
     return best
 
 
@@ -637,6 +750,10 @@ def main():
         sys.exit(run_role(args))
     settings = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
     LANG = settings.get('ui_language') or windows_language()
+    try:  # Linux: ~/.local/share/gravityrush does not exist before the first start
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     if args[:1] == ['--install-update'] and len(args) == 3:
         sys.exit(install_update(args[1], args[2]))
     if FROZEN and UPDATE_DIR not in PORT_DIR.parents:
@@ -652,7 +769,7 @@ def main():
     import tkinter as tk
     from tkinter import filedialog
     import launcher_ui
-    launcher_ui.run(sys.modules[__name__], tk, filedialog)
+    launcher_ui.run(sys.modules[__name__], tk, filedialog if WINDOWS else NativeDialogs(filedialog))
 
 
 if __name__ == '__main__' and os.environ.get('GR_GPU_PROBE'):

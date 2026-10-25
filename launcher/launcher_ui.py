@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import webbrowser
+from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageTk
 
@@ -47,7 +48,13 @@ CONSOLE_BG = '#0b0f14'
 GLASS = (11, 15, 20, 222)  # the sidebar over the picture
 # The names the pages use.
 PAPER, PAPER2, INK, MU, SD, TX = CARD, FIELD_HI, CONSOLE_BG, TEXT2, TEXT, TEXT
-UI_FONT, UI_FONT_SEMI = 'Segoe UI', 'Segoe UI Semibold'  # Windows' own font
+WINDOWS = os.name == 'nt'
+# Windows' own font; on Linux the launcher's Cabin (registered with fontconfig in run()).
+UI_FONT, UI_FONT_SEMI = ('Segoe UI', 'Segoe UI Semibold') if WINDOWS else ('Cabin', 'Cabin')
+MONO_FONT = 'Consolas' if WINDOWS else 'monospace'
+# Windows: a frameless window with its own title bar. Linux window managers give an
+# override-redirect window no keyboard focus and no taskbar entry: there it keeps its frame.
+FRAMELESS = WINDOWS
 
 # ---------------------------------------------------------------------------------------------
 # Texts in the European set (EFIGS: English, French, Italian, German, Spanish). Each row: English,
@@ -407,8 +414,30 @@ TRANSLATIONS = {code: {row[0]: row[i] for row in _ROWS} for i, code in enumerate
 LANG = 'en'
 
 
+def xrandr_rates():
+    """Linux (X11, XWayland): the rates xrandr lists for the current mode, the one marked '*'."""
+    try:
+        listing = subprocess.run(['xrandr', '--current'], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rates = set()
+    for line in listing.splitlines():
+        if '*' in line and line.startswith(' '):
+            for value in line.split()[1:]:
+                try:
+                    rate = round(float(value.rstrip('*+')))
+                except ValueError:
+                    continue
+                if rate > 1:
+                    rates.add(rate)
+            break  # the first display: the main one
+    return sorted(rates)
+
+
 def refresh_rates():
     """Refresh rates (Hz) the main display offers at the desktop resolution, from Windows."""
+    if not WINDOWS:
+        return xrandr_rates()
     from ctypes import wintypes
 
     class DEVMODEW(ctypes.Structure):
@@ -479,7 +508,14 @@ MODE_RESOLUTIONS = {1080: ('native', '720p', '648p', '540p'),
 
 
 def screen_size():
-    """The main display's resolution (Windows), or 1920x1080."""
+    """The main display's resolution (Windows; Tk's screen elsewhere), or 1920x1080."""
+    if not WINDOWS:
+        import tkinter
+        root = getattr(tkinter, '_default_root', None)
+        try:
+            return (root.winfo_screenwidth(), root.winfo_screenheight()) if root else (1920, 1080)
+        except tkinter.TclError:
+            return (1920, 1080)
     try:
         user32 = ctypes.windll.user32
         dc = user32.GetDC(0)
@@ -1283,14 +1319,17 @@ class LauncherWindow:
             root.iconbitmap(default=str(HERE / 'gravityrush.ico'))
         except tk.TclError:
             pass
-        root.overrideredirect(True)
-        root.after(10, self.taskbar_entry)
-        root.bind('<Map>', self.restore_frameless)
+        if FRAMELESS:
+            root.overrideredirect(True)
+            root.after(10, self.taskbar_entry)
+            root.bind('<Map>', self.restore_frameless)
         self.cv = tk.Canvas(root, width=width, height=height, highlightthickness=0, bd=0, bg='#2b3a36')
         self.cv.pack()
         self.cv.bind('<Button-1>', self.click_background)
         root.bind('<Escape>', self.escape)
         root.bind_all('<MouseWheel>', self.wheel)
+        for button in ('<Button-4>', '<Button-5>'):  # the wheel on X11 (Tk 8.6)
+            root.bind_all(button, self.wheel)
         root.bind('<KeyPress>', self.key_press)
 
     def taskbar_entry(self):
@@ -1308,11 +1347,12 @@ class LauncherWindow:
             pass
 
     def minimize(self):
-        self.root.overrideredirect(False)
+        if FRAMELESS:
+            self.root.overrideredirect(False)
         self.root.iconify()
 
     def restore_frameless(self, _event=None):
-        if self.root.state() == 'normal' and not self.root.overrideredirect():
+        if FRAMELESS and self.root.state() == 'normal' and not self.root.overrideredirect():
             self.root.overrideredirect(True)
             self.root.after(10, self.taskbar_entry)
 
@@ -1581,8 +1621,10 @@ class LauncherWindow:
 
     def wheel(self, event):
         if self.page and hasattr(self, 'body_canvas'):
+            # X11's Tk 8.6 sends the wheel as buttons 4 (up) and 5 (down), without a delta.
+            steps = {4: -1, 5: 1}.get(event.num) or int(-event.delta / 120)
             try:
-                self.body_canvas.yview_scroll(int(-event.delta / 120) * 3, 'units')
+                self.body_canvas.yview_scroll(steps * 3, 'units')
             except self.tk.TclError:
                 pass
 
@@ -1975,7 +2017,7 @@ class LauncherWindow:
         self.body_canvas.configure(yscrollincrement=1)
         tk.Label(body, text=t('Game messages'), bg=PAPER, fg=TEXT2, font=self.font(13)).pack(anchor='w')
         text = self.console = tk.Text(body, height=18, bg=CONSOLE_BG, fg='#b8c2cd', insertbackground=TEXT, relief='flat',
-                                      font=('Consolas', -self.px(12)), highlightthickness=1, highlightbackground=LINE,
+                                      font=(MONO_FONT, -self.px(12)), highlightthickness=1, highlightbackground=LINE,
                                       highlightcolor=LINE, wrap='none', padx=self.px(12), pady=self.px(10),
                                       selectbackground=ACCENT, selectforeground=ON_ACCENT)
         text.tag_configure('ok', foreground=OK_C)
@@ -2076,6 +2118,13 @@ class LauncherWindow:
     def shortcut(self):
         """Gravity Rush.lnk (plays with the saved settings) and Gravity Rush Launcher.lnk on the desktop."""
         logic = self.logic
+        if not WINDOWS:
+            try:
+                self.toast(t('Shortcut created on the desktop') if desktop_entries(logic) else
+                           t('Could not: {}').format('~/.local/share/applications'))
+            except OSError as error:
+                self.toast(t('Could not: {}').format(error))
+            return
         if logic.FROZEN:
             game = logic.PORT_DIR / logic.GAME_EXE
             links = [('Gravity Rush', game if game.is_file() else Path(sys.executable), '--play' if not game.is_file() else ''),
@@ -2162,7 +2211,10 @@ class LauncherWindow:
         path = Path(path or self.logic.DATA_DIR)
         if not path.exists():
             path.mkdir(parents=True, exist_ok=True)
-        os.startfile(str(path))
+        try:
+            self.logic.open_folder(path)
+        except OSError as error:  # no xdg-open
+            self.toast(t('Could not: {}').format(error))
 
     def copy_log(self):
         self.root.clipboard_clear()
@@ -2284,7 +2336,7 @@ class LauncherWindow:
             self.close_modal()
             self.toast(t('Close the game before updating.'))
             return
-        if not logic.IS_RELEASE:  # a development copy updates with git
+        if not logic.SELF_UPDATE:  # a development copy updates with git, an AppImage by downloading it
             self.close_modal()
             webbrowser.open(release['page'])
             return
@@ -2366,7 +2418,8 @@ class LauncherWindow:
             pass
         try:
             self.process = subprocess.Popen(logic.run_command(), cwd=logic.PORT_DIR, env=env, stdin=subprocess.DEVNULL,
-                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=logic.NO_WINDOW)
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=logic.NO_WINDOW,
+                                            **logic.NEW_GROUP)
         except OSError as error:
             self.toast(t('Could not: {}').format(error))
             return
@@ -2481,13 +2534,77 @@ class LauncherWindow:
         self.toast(t('The game exited.'))
 
 
+def desktop_entries(logic):
+    """Linux: "Gravity Rush" (plays with the saved settings) and "Gravity Rush Launcher" in the
+    applications menu (~/.local/share/applications) and on the desktop. Returns the menu folder."""
+    home = Path.home()
+    data = Path(os.environ.get('XDG_DATA_HOME') or home / '.local/share')
+    # The AppImage is mounted at a new path at every start: the entries start the file itself.
+    if os.environ.get('APPIMAGE'):
+        command = [os.environ['APPIMAGE']]
+    elif logic.FROZEN:
+        command = [sys.executable]
+    else:
+        command = [sys.executable, str(HERE / 'gravityrush_launcher.py')]
+    icon = data / 'icons' / 'hicolor' / '256x256' / 'apps' / 'gravityrush-launcher.png'
+    icon.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(HERE / 'gravityrush.png', icon)
+
+    def exec_line(args):  # the Desktop Entry quoting rules
+        quoted = []
+        for arg in args:
+            if any(c in arg for c in ' \t\n"\'\\><~|&;$*?#()`'):
+                arg = '"' + ''.join('\\' + c if c in '"`$\\' else c for c in arg) + '"'
+            quoted.append(arg.replace('%', '%%'))
+        return ' '.join(quoted)
+    menu = data / 'applications'
+    menu.mkdir(parents=True, exist_ok=True)
+    desktop = None
+    try:
+        found = subprocess.run(['xdg-user-dir', 'DESKTOP'], capture_output=True, text=True, timeout=5,
+                               env=logic.host_environment()).stdout.strip()
+        desktop = Path(found) if found and Path(found) != home else None
+    except (OSError, subprocess.SubprocessError):
+        desktop = home / 'Desktop'
+    for name, file, args in (('Gravity Rush', 'gravityrush-play.desktop', ['--play']),
+                             ('Gravity Rush Launcher', 'gravityrush-launcher.desktop', [])):
+        text = ('[Desktop Entry]\nType=Application\n'
+                f'Name={name}\nExec={exec_line(command + args)}\nIcon={icon}\n'
+                f'Path={logic.PORT_DIR if not os.environ.get("APPIMAGE") else home}\n'
+                'Terminal=false\nCategories=Game;\nStartupWMClass=Gravityrush\n')
+        for folder in (menu, desktop):
+            if folder and folder.is_dir():
+                entry = folder / file
+                entry.write_text(text, encoding='utf-8')
+                entry.chmod(0o755)
+    return menu
+
+
+def register_fonts(logic):
+    """Linux: Tk finds fonts through fontconfig; a private configuration adds the launcher's Cabin
+    (launcher/fonts) to the system's fonts, for this process only."""
+    if WINDOWS or os.environ.get('FONTCONFIG_FILE') or not FONT_FILE.is_file():
+        return
+    try:
+        logic.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        conf = logic.CONFIG_DIR / 'fonts.conf'
+        conf.write_text('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n'
+                        '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
+                        f'  <dir>{escape(str(FONT_FILE.parent))}</dir>\n</fontconfig>\n', encoding='utf-8')
+        os.environ['FONTCONFIG_FILE'] = str(conf)
+    except OSError:
+        pass
+
+
 def run(logic, tk, filedialog):
     """Opens the launcher window (Tk is created here)."""
     try:  # its own taskbar button and icon, not Python's
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('LucaPazienza.GravityRush.Launcher')
     except (AttributeError, OSError):
         pass
-    root = tk.Tk()
+    register_fonts(logic)
+    # Linux: WM_CLASS Gravityrush, which the desktop entries name (StartupWMClass).
+    root = tk.Tk() if WINDOWS else tk.Tk(className='gravityrush')
     try:
         icon = ImageTk.PhotoImage(Image.open(HERE / 'gravityrush.png'))
         root.iconphoto(True, icon)
