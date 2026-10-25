@@ -74,7 +74,7 @@ Not done yet / known gaps:
 
 ## Requirements
 
-- Windows 10 (1903 or newer) or Windows 11, 64-bit.
+- Windows 10 (1903 or newer) or Windows 11, 64-bit; or 64-bit (x86-64) Linux, see [Linux](#linux).
 - A graphics card with Vulkan 1.3 and a current driver.
 - Your own legally acquired copy of Gravity Rush Remastered (PS4), as an unpacked game folder
   (eboot.bin, sce_module, sce_sys) that you prepare with your own tools. Tested with the European
@@ -93,6 +93,28 @@ The Video page sets the render resolution (up to 4K), shadow quality and the dis
 To report a problem, press **F12** where you see it (the frames are saved in `user\screenshots`)
 and open an [issue](https://github.com/LucaPazienza/gravityrush_pc/issues) with them,
 `user\last_run.log` and where you were in the game.
+
+## Linux
+
+The same port builds natively on x86-64 Linux, with the same launcher, packaged as an AppImage.
+The Linux build compiles and packages in CI; running the game on Linux has not been verified for
+this version yet. Details (packages per distribution, data folders, gamepad udev rules, Vulkan
+drivers, FSR 4): [packaging/linux/README-Linux.md](packaging/linux/README-Linux.md).
+
+- **AppImage** (glibc 2.41+: Debian 13, Ubuntu 25.04, Fedora 42, Arch or newer; on SteamOS check `ldd --version` in Konsole):
+  `chmod +x GravityRush-PC-*-Linux-x86_64.AppImage` and run it; choose the game folder and press
+  **Play**. Saves, settings and caches go to `~/.local/share/gravityrush` and
+  `~/.config/gravityrush-launcher`.
+- **From source**:
+
+  ```bash
+  git clone --recursive https://github.com/LucaPazienza/gravityrush_pc
+  cd gravityrush_pc
+  sudo bash packaging/linux/install-deps.sh       # Debian/Ubuntu, Fedora, Arch (NixOS: shell.nix)
+  bash build.sh
+  GOW3_GAME_DIR=/path/to/CUSA01113 bash run.sh    # or: python3 launcher/gravityrush_launcher.py
+  bash packaging/linux/package.sh                 # dist/GravityRush-PC-<version>-Linux-x86_64.AppImage
+  ```
 
 ## Building and Running
 
@@ -124,7 +146,7 @@ The loader stops at the first PS4 system function the runtime does not implement
 | GPU and libraries | `gpu/shadps4/` | shadPS4 video core (Vulkan), font library and AvPlayer |
 | Preparation | `scripts/` | Reads `eboot.bin`, links the game's `libc` and `libSceFios2` |
 | Launcher | `launcher/gravityrush_launcher.py`, `launcher/launcher_ui.py` | Settings, controls and the play button |
-| Packaging | `packaging/windows/package.sh` | Builds the release zip (with the third-party licenses) |
+| Packaging | `packaging/windows/package.sh`, `packaging/linux/package.sh` | Builds the release zip and the Linux AppImage (with the third-party licenses) |
 
 Please do not add proprietary game files, disc images, executables, firmware, or other copyrighted
 game data to this repository.
