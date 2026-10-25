@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Gravity Rush
+Comment=Gravity Rush Remastered (PS4) for PC: launcher
+Exec=gravityrush-launcher %U
+Icon=gravityrush
+Terminal=false
+Categories=Game;
+StartupWMClass=Gravityrush
+X-AppImage-Name=Gravity Rush

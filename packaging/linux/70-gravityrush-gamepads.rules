@@ -1,0 +1,12 @@
+# Gamepad access for the Gravity Rush PC port (SDL3's HIDAPI drivers: DualSense / DualShock 4
+# gyro, touchpad, light bar and rumble; Xbox controllers' extra features). Steam installs
+# equivalent rules; without either, pads still work through evdev, without motion controls.
+# Install: sudo cp 70-gravityrush-gamepads.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload && sudo udevadm trigger   (then reconnect the pad)
+
+# Sony DualShock 4, DualSense, DualSense Edge: USB, then Bluetooth
+KERNEL=="hidraw*", ATTRS{idVendor}=="054c", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", KERNELS=="*054C:*", MODE="0660", TAG+="uaccess"
+# Microsoft Xbox One / Series controllers: USB, then Bluetooth
+KERNEL=="hidraw*", ATTRS{idVendor}=="045e", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", KERNELS=="*045E:*", MODE="0660", TAG+="uaccess"

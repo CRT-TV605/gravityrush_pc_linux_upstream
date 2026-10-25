@@ -1,0 +1,9 @@
+#!/bin/sh
+# The AppImage's entry point: the launcher, frozen with PyInstaller (packaging/linux/package.sh).
+# Arguments pass through: --play starts the game with the saved settings, --run runs run.py
+# (GOW3_GAME_DIR=... ./GravityRush.AppImage --run), --script runs a preparation script.
+# Everything written goes to ~/.local/share/gravityrush (GOW3_DATA_DIR) and
+# ~/.config/gravityrush-launcher: the image itself is read-only.
+here=$(dirname -- "$(readlink -f -- "$0")")
+export GOW3_PREBUILT=1
+exec "$here/usr/lib/gravityrush/gravityrush-launcher" "$@"
