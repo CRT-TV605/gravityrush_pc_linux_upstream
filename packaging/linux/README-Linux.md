@@ -6,6 +6,10 @@ CPU, the runtime in `src/` stands in for the PS4 system libraries, the shadPS4 v
 included: you need your own copy, as an unpacked game folder (`eboot.bin`, `sce_module`,
 `sce_sys`) prepared with your own tools. Tested build: CUSA01113, version 01.00.
 
+The Linux port (the Linux parts of the runtime, `run.py` and the launcher, the packaging and
+this document) was written with an AI coding assistant (Claude Code), tested by a person on
+one device, and has not been reviewed by the original author of the port.
+
 ## Requirements
 
 - x86-64 CPU (the game's code runs natively; no ARM).
@@ -159,7 +163,7 @@ sudo udevadm control --reload && sudo udevadm trigger   # then reconnect the con
 Xbox controllers over Bluetooth may need the `xpadneo` driver on some kernels. Inside Steam
 (as a non-Steam game), Steam Input presents pads as a virtual Xbox controller, without the
 PS4-style motion data: with an external DualSense/DS4, turn Steam Input off for the game to keep
-the gyro. A Steam Deck's built-in controls only reach the game through Steam Input (as that
+the gyro. A handheld's built-in controls (Steam Deck, ROG Ally on SteamOS) only reach the game through Steam Input (as that
 Xbox-style pad; its gyro can be mapped there, but not as PS4 motion).
 
 ## Vulkan drivers
@@ -192,13 +196,14 @@ prints `Upscaler: FSR 4 unavailable: …` and goes on without it. FSR 4.1.1 asse
 - The port has been developed and tested on Windows. On Linux it compiles and packages
   (Debian 13 container; the CI job runs the same steps), the AppImage's runtime and launcher
   start on a clean Arch system and pass a Vulkan smoke test on lavapipe, and the game has been
-  reported working on a Steam Deck (AMD, RADV). NVIDIA and Intel GPUs are not tested yet.
+  reported working on one ASUS ROG Ally (Z1 Extreme, AMD/RADV) with SteamOS. Testing is at a very
+  early stage: other devices, the Steam Deck, NVIDIA and Intel GPUs are not tested yet.
 - `bash build.sh --test`: `pad-test` stops at stale touchpad expectations, and the Python
   wrappers' `runtime-test` (mutex results) and `sema-test` (an import now resolved) too: these
   C tests predate changes made on Windows (where they are not built) and need updating.
   `file-mods`, `content`, `mp3`, `videodec` and `services` pass.
 - The AppImage needs glibc 2.41+; older distributions should build from source.
-- Steam Deck: reported working. Add the AppImage to Steam as a non-Steam game (Desktop Mode)
+- SteamOS (ROG Ally, Steam Deck): add the AppImage to Steam as a non-Steam game (Desktop Mode)
   to play from Game Mode.
 - Wayland: SDL3 uses Wayland when available, else X11/XWayland. `SDL_VIDEODRIVER=x11` forces X11.
 - The launcher keeps the normal window frame on Linux (window managers give frameless windows

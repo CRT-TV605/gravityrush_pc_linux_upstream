@@ -97,7 +97,8 @@ and open an [issue](https://github.com/LucaPazienza/gravityrush_pc/issues) with 
 ## Linux
 
 The same port builds natively on x86-64 Linux, with the same launcher, packaged as an AppImage.
-It has been reported working on a Steam Deck; other GPUs (NVIDIA, Intel) are not tested yet. Details (packages per distribution, data folders, gamepad udev rules, Vulkan
+Testing is at a very early stage: it has been reported working on one ASUS ROG Ally (Z1 Extreme)
+with SteamOS; other devices and GPUs (NVIDIA, Intel) are not tested yet. Details (packages per distribution, data folders, gamepad udev rules, Vulkan
 drivers, FSR 4): [packaging/linux/README-Linux.md](packaging/linux/README-Linux.md).
 
 - **AppImage** (glibc 2.41+: Debian 13, Ubuntu 25.04, Fedora 42, Arch or newer; on SteamOS check `ldd --version` in Konsole):
