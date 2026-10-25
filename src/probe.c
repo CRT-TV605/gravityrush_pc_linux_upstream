@@ -23,6 +23,7 @@
 #include <execinfo.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
+#include <spawn.h>
 #endif
 
 typedef struct { uint64_t address, size, flags; } Segment;
@@ -490,7 +491,7 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
     fclose(f);
     printf("Patches: %" PRIu64 " writes, %" PRIu64 " bytes applied, %" PRIu64 " pointers rebased\n",count,bytes,rebased);
 }
-/* Restarts the game through run.sh (the settings menu: a new render resolution is a patch
+/* Restarts the game through run.py (the settings menu: a new render resolution is a patch
  * applied at start). Descriptors are closed first so the old GPU device and its memory are
  * released before the new process opens its own. */
 void runtime_restart(void) {
@@ -513,11 +514,30 @@ void runtime_restart(void) {
     /* The new launch waits for this process's GPU device to go away (run.py --after). */
     TerminateProcess(GetCurrentProcess(),0);
 #else
-    puts("Runtime: restarting through run.sh");
-    syscall(SYS_close_range, 3u, ~0u, 0u);
-    execlp("bash", "bash", "run.sh", (char *)NULL);
-    perror("runtime_restart: exec");
-    _exit(1);
+    /* run.py sets GOW3_RESTART_COMMAND (a shell command line); without it, run.sh in this process. */
+    const char *command=getenv("GOW3_RESTART_COMMAND");
+    if (!command || !*command) {
+        puts("Runtime: restarting through run.sh");
+        syscall(SYS_close_range, 3u, ~0u, 0u);
+        execlp("bash", "bash", "run.sh", (char *)NULL);
+        perror("runtime_restart: exec");
+        _exit(1);
+    }
+    puts("Runtime: restarting through run.py");
+    /* Only stdin/stdout/stderr go to the new launch (a launcher reading the game's log keeps
+     * reading it): the GPU device and audio descriptors close with this process. */
+    if (syscall(SYS_close_range, 3u, ~0u, 4u /* CLOSE_RANGE_CLOEXEC */)) {
+        for (int fd=3; fd<65536; ++fd) {
+            int flags=fcntl(fd,F_GETFD);
+            if (flags>=0) fcntl(fd,F_SETFD,flags|FD_CLOEXEC);
+        }
+    }
+    char *shell[]={"sh","-c",(char *)command,NULL};
+    pid_t child;
+    int error=posix_spawn(&child,"/bin/sh",NULL,NULL,shell,environ);
+    if (error) { fprintf(stderr,"runtime_restart: spawn failed (%s)\n",strerror(error)); _exit(1); }
+    /* The new launch waits for the old run.py, which ends with this process (run.py --after). */
+    _exit(0);
 #endif
 }
 

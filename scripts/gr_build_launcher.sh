@@ -30,7 +30,7 @@ out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyins
 # The scripts run inside GravityRush.exe (--run, --script): the modules they import come along.
 hidden=()
 for module in argparse base64 collections hashlib json re shutil struct tempfile xml.etree.ElementTree \
-              urllib.request ctypes.wintypes zlib hmac pkg_extract pkg_keys game_profiles \
+              urllib.request ctypes.wintypes zlib hmac platform_paths shlex pkg_extract pkg_keys game_profiles \
               graphics_options prepare link_libc link_modules mods patches save_backup \
               cryptography.hazmat.primitives.ciphers PIL.Image PIL.ImageTk PIL.ImageDraw PIL.ImageFont \
               PIL.ImageFilter launcher_ui; do

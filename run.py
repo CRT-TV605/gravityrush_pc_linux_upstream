@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Windows counterpart of run.sh: prepares the game image and starts gravityrush-runtime.exe.
+"""Prepares the game image and starts gravityrush-runtime (Windows and Linux; run.sh calls it).
 
-Same environment variables as run.sh (GOW3_GAME_DIR, GOW3_DATA_DIR, GOW3_PATCHES, GOW3_MODS_*,
-GOW3_USER_DIR, ...). Extra arguments go to gravityrush-runtime.
+Environment variables: GOW3_GAME_DIR, GOW3_DATA_DIR, GOW3_PATCHES, GOW3_MODS_*, GOW3_USER_DIR, ...
+Extra arguments go to gravityrush-runtime. `--software` (Linux) renders with Mesa's lavapipe.
 The in-game "Apply and restart" runs this script again through GOW3_RESTART_COMMAND;
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
 import ctypes
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 PORT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PORT / 'scripts'))
+from platform_paths import EXE, WINDOWS, data_dir, host_environment  # noqa: E402
 
 
 def fail(message):
@@ -22,18 +26,66 @@ def fail(message):
     sys.exit(1)
 
 
-def wait_for(pid):
-    kernel32 = ctypes.windll.kernel32
-    SYNCHRONIZE = 0x00100000
-    handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-    if handle:
-        kernel32.WaitForSingleObject(handle, 30000)
-        kernel32.CloseHandle(handle)
+def running(pid):
+    """Whether a process exists and has not exited (a zombie, unreaped by its parent, has)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:  # /proc/<pid>/stat: "pid (name) state ..."
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except (OSError, IndexError):
+        return True
+
+
+def wait_for(pid, timeout=30):
+    if WINDOWS:
+        kernel32 = ctypes.windll.kernel32
+        SYNCHRONIZE = 0x00100000
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            kernel32.WaitForSingleObject(handle, timeout * 1000)
+            kernel32.CloseHandle(handle)
+        return
+    deadline = time.monotonic() + timeout
+    while running(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 
 def no_console():
     """Started without a console (the launcher): console programs must not open their own."""
+    if not WINDOWS:
+        return 0
     return 0 if ctypes.windll.kernel32.GetConsoleWindow() else subprocess.CREATE_NO_WINDOW
+
+
+def software_rendering(env):
+    """--software: Mesa's lavapipe instead of the GPU (Linux; slow, for tests without a GPU)."""
+    if not env.get('VK_DRIVER_FILES'):
+        for folder in ('/run/opengl-driver/share/vulkan/icd.d', '/usr/share/vulkan/icd.d'):
+            found = sorted(Path(folder).glob('lvp_icd*.json')) if Path(folder).is_dir() else []
+            if found:
+                env['VK_DRIVER_FILES'] = str(found[0])
+                break
+    if not env.get('VK_DRIVER_FILES'):
+        fail('Lavapipe not found; set VK_DRIVER_FILES.')
+    env['VK_LOADER_LAYERS_DISABLE'] = '~implicit~'
+
+
+def optimize_fsr4(env):
+    """FSR 4: faster post passes next to the downloaded ones (tools/fsr4_optimize.sh, incremental).
+    Linux source trees only, when spirv-cross, glslang and Perl are there; the game works without."""
+    if WINDOWS or getattr(sys, 'frozen', False) or env.get('GOW3_PREBUILT'):
+        return
+    folder = Path(env.get('GOW3_FSR4_DIR') or PORT / 'fsr4_shaders')
+    script = PORT / 'tools' / 'fsr4_optimize.sh'
+    if not folder.is_dir() or not script.is_file() or \
+            not all(shutil.which(tool) for tool in ('bash', 'spirv-cross', 'glslangValidator', 'perl')):
+        return
+    if subprocess.run(['bash', str(script)], stdin=subprocess.DEVNULL, env=env).returncode:
+        print('FSR 4: optimized post passes not built', file=sys.stderr, flush=True)
 
 
 def run_script(name, *args, capture=False):
@@ -67,10 +119,19 @@ def main():
     if len(args) >= 2 and args[0] == '--after':
         wait_for(int(args[1]))
         args = args[2:]
-    # As run.sh: relative paths (GOW3_GAME_DIR, GOW3_DATA_DIR, fsr4_shaders/) are from the port.
+    # Relative paths (GOW3_GAME_DIR, GOW3_DATA_DIR, fsr4_shaders/) are from the port.
     os.chdir(PORT)
     env = os.environ
-    data = Path(env.get('GOW3_DATA_DIR', PORT))
+    # Frozen on Linux: the runtime gets the system's libraries, not the launcher's.
+    if getattr(sys, 'frozen', False) and not WINDOWS:
+        host = host_environment()
+        env.clear()
+        env.update(host)
+    if args[:1] == ['--software']:
+        args = args[1:]
+        software_rendering(env)
+    # Windows: the port folder. Linux: ~/.local/share/gravityrush (scripts/platform_paths.py).
+    data = data_dir(PORT)
     out = data / 'out'
     out.mkdir(parents=True, exist_ok=True)
     if not (data / 'gravityrush.ini').exists() and (data / 'gow3.ini').exists():
@@ -81,20 +142,24 @@ def main():
     for key in env.pop('GOW3_DERIVED', '').split(','):
         env.pop(key, None)
     derived = []
-    sys.path.insert(0, str(PORT / 'scripts'))
     import graphics_options
     graphics, reverted = graphics_options.prepare(env['GOW3_CONFIG'], out / 'graphics_state.json')
     if reverted:
         print('Graphics: the last restart never reached the game; previous options restored', flush=True)
     env.update(graphics_options.environment(graphics))
-    if not env.get('GOW3_FSR411_DIR') and not (PORT / 'fsr4_411').is_dir() and (data / 'fsr4_411').is_dir():
-        env['GOW3_FSR411_DIR'] = str(data / 'fsr4_411')
+    # FSR 4 / 4.1.1 assets: next to run.py, else in the data directory (a read-only port folder).
+    for key, name in (('GOW3_FSR4_DIR', 'fsr4_shaders'), ('GOW3_FSR411_DIR', 'fsr4_411')):
+        if not env.get(key) and not (PORT / name).is_dir() and (data / name).is_dir():
+            env[key] = str(data / name)
+    optimize_fsr4(env)
 
-    probe = Path(env['GOW3_PROBE']) if env.get('GOW3_PROBE') else find_executable('gravityrush-runtime.exe')
+    runtime = 'gravityrush-runtime' + EXE
+    probe = Path(env['GOW3_PROBE']) if env.get('GOW3_PROBE') else find_executable(runtime)
     if not probe or not probe.is_file():
-        fail('gravityrush-runtime.exe not found: build it with build.sh (MSYS2 CLANG64) or use a packaged build.')
+        fail(f'{runtime} not found: build it with build.sh ' + ('(MSYS2 CLANG64) ' if WINDOWS else '') +
+             'or use a packaged build.')
     # Development builds run from the MSYS2 tree: its CLANG64 DLLs (SDL3, FFmpeg, ...).
-    if not (probe.parent / 'SDL3.dll').is_file():
+    if WINDOWS and not (probe.parent / 'SDL3.dll').is_file():
         clang64 = Path(env.get('MSYS2_ROOT', r'C:\msys64')) / 'clang64' / 'bin'
         if clang64.is_dir():
             env['PATH'] = f'{clang64}{os.pathsep}{env.get("PATH", "")}'
@@ -206,7 +271,8 @@ def main():
             print(f'Save backup failed, starting anyway: {error}', flush=True)
         this = ['--run'] if getattr(sys, 'frozen', False) else [str(Path(__file__).resolve())]
         restart = [sys.executable, *this, '--after', str(os.getpid()), *args]
-        env['GOW3_RESTART_COMMAND'] = subprocess.list2cmdline(restart)
+        # Windows: CreateProcess parses it; Linux: /bin/sh -c (src/probe.c, runtime_restart).
+        env['GOW3_RESTART_COMMAND'] = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
         command = [str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                    '--patches', str(out / 'patches.bin'), '--app0', str(game),
                    '--user', str(user_dir),
