@@ -61,7 +61,8 @@ fi
 mkdir -p pgo
 # Submodules (git clone --recursive, or: git submodule update --init) and this port's changes
 # to FSR-Vulkan (gpu/patches/fsr-vulkan), applied to its working tree once.
-if [[ ! -f gpu/third_party/fsr-vulkan/CMakeLists.txt || ! -f gpu/third_party/imgui/imgui.h ]]; then
+if [[ ! -f gpu/third_party/fsr-vulkan/CMakeLists.txt || ! -f gpu/third_party/imgui/imgui.h ||
+      ! -f gpu/third_party/xbyak/xbyak/xbyak.h ]]; then
     git submodule update --init --recursive
 fi
 for patch in gpu/patches/fsr-vulkan/*.patch; do
@@ -92,7 +93,7 @@ echo "Built $PWD/out/gravityrush-runtime"
 # GPU check for run.sh (live_resolution=auto): links only the Vulkan loader.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror tools/gpu_capabilities.c "${libraries[@]}" -o out/gravityrush-gpu-check
 if [[ ${1:-} == --test ]]; then
-    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_pad.c "${libraries[@]}" -o out/pad-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_pad.c "${libraries[@]}" -lm -o out/pad-test
     out/pad-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I. -Isrc tests/test_runtime.c "${runtime[@]}" out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/runtime-test
     out/runtime-test
@@ -102,7 +103,7 @@ if [[ ${1:-} == --test ]]; then
     out/sema-test
     "$CC" -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_content.c src/runtime_content.c -o out/content-test
     out/content-test
-    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_mp3.c src/runtime_mp3.c out/libatrac9.a "${libraries[@]}" -o out/mp3-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_mp3.c src/runtime_mp3.c out/libatrac9.a "${libraries[@]}" -lm -o out/mp3-test
     out/mp3-test tests/data/sine.mp3
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread "${includes[@]}" -I. -Isrc tests/test_videodec.c "${libraries[@]}" -o out/videodec-test
     out/videodec-test tests/data/tiny.h264

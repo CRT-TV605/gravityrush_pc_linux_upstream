@@ -170,6 +170,8 @@ target_compile_definitions(gow3gpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
 set_source_files_properties(shim/gow3_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
 target_include_directories(gow3gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+# xbyak (header-only) from its submodule on every system: few Linux distributions package it.
+target_include_directories(gow3gpu PRIVATE third_party/xbyak)
 target_compile_definitions(gow3gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(gow3gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against gravityrush-runtime.
@@ -184,7 +186,6 @@ if (WIN32)
     # <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
     target_compile_definitions(gow3gpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
     target_compile_options(gow3gpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/gow3_win_compat.h)
-    target_include_directories(gow3gpu PRIVATE third_party/xbyak)
     target_link_libraries(gow3gpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm pdh)
 else()
     target_link_libraries(gow3gpu PUBLIC PkgConfig::X11)

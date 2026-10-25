@@ -290,6 +290,11 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
 static void fault(int sig, siginfo_t *info, void *context) {
     /* GPU page tracking (write-protected guest pages) is resolved first. */
     if (gpu_enabled && sig == SIGSEGV && gow3gpu_handle_fault(context, info->si_addr)) return;
+    /* SSE4a (EXTRQ/INSERTQ) in guest code on a CPU without it (Intel): emulated (runtime_sse4a.c). */
+    if (sig == SIGILL && image &&
+        (uintptr_t)((ucontext_t *)context)->uc_mcontext.gregs[REG_RIP]-(uintptr_t)image<0x20000000 &&
+        runtime_sse4a_emulate(context))
+        return;
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
     if ((sig == SIGSEGV || sig == SIGBUS) && runtime_fault_recover) {
         sigjmp_buf *recover = runtime_fault_recover;

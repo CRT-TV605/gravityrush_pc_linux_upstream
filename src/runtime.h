@@ -10,6 +10,13 @@ typedef gow3_jmp_buf sigjmp_buf;
 #define sigsetjmp(buffer, save) gow3_setjmp(buffer)
 #else
 #include <setjmp.h>
+#include <errno.h>
+#include <time.h>
+/* compat_win.h's sleep: nanosleep has sub-millisecond precision on Linux. */
+static inline void compat_sleep_ns(uint64_t ns) {
+    struct timespec t={.tv_sec=(time_t)(ns/1000000000),.tv_nsec=(long)(ns%1000000000)};
+    while (nanosleep(&t,&t) && errno==EINTR) {}
+}
 #endif
 /* Recovery point for speculative guest memory reads on this thread (probe.c fault handler). */
 extern __thread sigjmp_buf *runtime_fault_recover;
