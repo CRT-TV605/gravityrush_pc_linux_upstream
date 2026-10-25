@@ -109,21 +109,36 @@ patchelf --set-rpath '$ORIGIN/../lib' "$port/bin/gpu/libgow3gpu.so"
 missing=$(ldd "$port/bin/gravityrush-runtime" "$port/bin/gpu/libgow3gpu.so" | grep 'not found' || true)
 [[ -z $missing ]] || { echo "Unresolved libraries in the package:" >&2; echo "$missing" >&2; exit 1; }
 
-# The licenses of what ships: the Debian packages the bundled libraries come from (their
-# copyright files), and the Python parts frozen into the launcher.
+# The licenses of what ships: SDL3 and FFmpeg as build-libs.sh built them (with their exact
+# sources, as the LGPL asks), the build system's packages for the other bundled libraries
+# (their copyright files), and the Python parts frozen into the launcher.
 licenses=$port/THIRD-PARTY-LICENSES
 mkdir -p "$licenses"
 {
     echo "Third-party components shipped with the Gravity Rush PC port (Linux)."
-    echo "bin/lib holds shared libraries of the build system's packages; each package's copyright"
-    echo "file is in the folder of its name."
+    echo "Each component's license is in the folder of its name."
     echo
+    if [[ -f $port/bin/lib/libSDL3.so.0 && -f out/libs-src/SDL/LICENSE.txt ]]; then
+        mkdir -p "$licenses/SDL3"
+        cp out/libs-src/SDL/LICENSE.txt "$licenses/SDL3/"
+        echo "bin/lib/libSDL3.so.0: SDL $(sed -n 's/^Version: //p' "$own/pkgconfig/sdl3.pc") (zlib license),"
+        echo "  source: https://github.com/libsdl-org/SDL tag release-$(sed -n 's/^Version: //p' "$own/pkgconfig/sdl3.pc")"
+    fi
+    if [[ -f $port/bin/lib/libavcodec.so.61 && -f out/libs-src/FFmpeg/COPYING.LGPLv2.1 ]]; then
+        mkdir -p "$licenses/FFmpeg"
+        cp out/libs-src/FFmpeg/COPYING.LGPLv2.1 out/libs-src/FFmpeg/LICENSE.md "$licenses/FFmpeg/"
+        echo "bin/lib/libav*, libsw*: FFmpeg $(cat out/libs-src/FFmpeg/RELEASE) (LGPL 2.1 or later; no GPL parts),"
+        echo "  source: https://github.com/FFmpeg/FFmpeg tag n$(cat out/libs-src/FFmpeg/RELEASE), unmodified,"
+        echo "  built by packaging/linux/build-libs.sh of this port with:"
+        sed -n 's/^#define FFMPEG_CONFIGURATION "\(.*\)"/    \1/p' out/libs-src/FFmpeg/config.h | sed 's#--prefix=[^ ]* --libdir=[^ ]* ##'
+    fi
     if command -v dpkg >/dev/null; then
         for lib in "$port"/bin/lib/*.so*; do
+            [[ -f $own/$(basename "$lib") ]] && continue  # built above, not a package's
             dpkg -S "$(basename "$lib")" 2>/dev/null | head -1 | cut -d: -f1 || true
         done | sort -u | while read -r pkg; do
             [[ -n $pkg ]] || continue
-            echo "$pkg $(dpkg-query -W -f='${Version}' "$pkg")"
+            echo "Debian package $pkg $(dpkg-query -W -f='${Version}' "$pkg") (sources: https://sources.debian.org/src/$(dpkg-query -W -f='${source:Package}' "$pkg")/)"
             if [[ -f /usr/share/doc/$pkg/copyright ]]; then
                 mkdir -p "$licenses/$pkg"
                 cp "/usr/share/doc/$pkg/copyright" "$licenses/$pkg/"
@@ -136,6 +151,7 @@ mkdir -p "$licenses"
     echo "The launcher is frozen with PyInstaller (GPL with a bootloader exception) and contains Python"
     echo "(PSF License), Tcl/Tk (BSD-style), Pillow (MIT-CMU) and cryptography (Apache-2.0 / BSD)."
     echo "The launcher font Cabin is under the SIL Open Font License (launcher/fonts/OFL-Cabin.txt)."
+    echo "The port itself is GPL-2.0-or-later (LICENSE); its source: https://github.com/LucaPazienza/gravityrush_pc"
 } > "$licenses/README.txt"
 
 # AppImage metadata: the entry point, the desktop entry and the icon.

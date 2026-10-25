@@ -191,16 +191,15 @@ prints `Upscaler: FSR 4 unavailable: …` and goes on without it. FSR 4.1.1 asse
 
 - The port has been developed and tested on Windows. On Linux it compiles and packages
   (Debian 13 container; the CI job runs the same steps), the AppImage's runtime and launcher
-  start on a clean Arch system and pass a Vulkan smoke test on lavapipe, but **the game itself
-  has not been run on Linux with a GPU for this version**: problems that only show with the
-  game (the fibers on ucontext, timing, the GPU on RADV/NVIDIA/ANV) may remain.
+  start on a clean Arch system and pass a Vulkan smoke test on lavapipe, and the game has been
+  reported working on a Steam Deck (AMD, RADV). NVIDIA and Intel GPUs are not tested yet.
 - `bash build.sh --test`: `pad-test` stops at stale touchpad expectations, and the Python
   wrappers' `runtime-test` (mutex results) and `sema-test` (an import now resolved) too: these
   C tests predate changes made on Windows (where they are not built) and need updating.
   `file-mods`, `content`, `mp3`, `videodec` and `services` pass.
 - The AppImage needs glibc 2.41+; older distributions should build from source.
-- Steam Deck: add the AppImage to Steam as a non-Steam game (Desktop Mode) to play from Game
-  Mode; it is the AMD/RADV case above. Not tested on a Deck.
+- Steam Deck: reported working. Add the AppImage to Steam as a non-Steam game (Desktop Mode)
+  to play from Game Mode.
 - Wayland: SDL3 uses Wayland when available, else X11/XWayland. `SDL_VIDEODRIVER=x11` forces X11.
 - The launcher keeps the normal window frame on Linux (window managers give frameless windows
   no keyboard focus). The refresh rate list comes from `xrandr` (X11/XWayland); without it only
