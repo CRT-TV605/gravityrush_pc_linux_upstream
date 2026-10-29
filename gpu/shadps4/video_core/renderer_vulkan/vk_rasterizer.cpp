@@ -337,7 +337,7 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
 
 static std::pair<u32, u32> GetDrawOffsets(
     const AmdGpu::Regs& regs, const Shader::Info& info,
-    const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader) {
+    const std::optional<const Shader::Gcn::FetchShaderData>& fetch_shader) {
     u32 vertex_offset = regs.index_offset;
     u32 instance_offset = 0;
     if (fetch_shader) {
@@ -604,20 +604,7 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
     }
     std::array<u16, AmdGpu::RegDirty::NumBlocks> blocks;
     u32 num_blocks = 0;
-#ifdef __GLIBCXX__
-    for (size_t block = dirty.blocks._Find_first(); block < dirty.blocks.size();
-         block = dirty.blocks._Find_next(block)) {
-        blocks[num_blocks++] = static_cast<u16>(block);
-    }
-#else
-    if (dirty.blocks.any()) {
-        for (size_t block = 0; block < dirty.blocks.size(); ++block) {
-            if (dirty.blocks.test(block)) {
-                blocks[num_blocks++] = static_cast<u16>(block);
-            }
-        }
-    }
-#endif
+    dirty.ForEach([&](u32 block) { blocks[num_blocks++] = static_cast<u16>(block); });
     const auto stages =
         pipeline ? pipeline->GetStages() : std::span<const Shader::Info* const>{};
     // Constants: copied here into the ring, the recording thread only binds them.
