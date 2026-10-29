@@ -66,14 +66,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: gravityrush-windows
-          path: dist/gravityrush-windows.zip
+          path: dist/GravityRush-PC-*-Windows.zip*
           if-no-files-found: error
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/gravityrush-windows.zip
+          files: dist/GravityRush-PC-*-Windows.zip*
           generate_release_notes: true
           body: |
             **Gravity Rush Remastered (PS4, CUSA01113) for PC.** No game files are included: you need your own
