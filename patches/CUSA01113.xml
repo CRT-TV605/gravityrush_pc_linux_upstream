@@ -650,6 +650,18 @@
             <Line Type="bytes" Address="0x0042867f" Value="00100000"/>
         </PatchList>
     </Metadata>
+    <Metadata Title="Gravity Rush Remastered" Name="Shadow Quality - 1024" Note="Shadow map 1024x1024 (the game uses 2048x2048)." Author="CRT-TV605" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
+        <PatchList>
+            <Line Type="bytes" Address="0x00428679" Value="00040000"/>
+            <Line Type="bytes" Address="0x0042867f" Value="00040000"/>
+        </PatchList>
+    </Metadata>
+    <Metadata Title="Gravity Rush Remastered" Name="Shadow Quality - 512" Note="Shadow map 512x512 (the game uses 2048x2048)." Author="CRT-TV605" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin">
+        <PatchList>
+            <Line Type="bytes" Address="0x00428679" Value="00020000"/>
+            <Line Type="bytes" Address="0x0042867f" Value="00020000"/>
+        </PatchList>
+    </Metadata>
     <Metadata Title="Gravity Rush Remastered" Name="Bug Fix - Gravity Shift Camera" Note="The roll correction of the gravity-shift camera follows the frame time: above 60 FPS the view no longer swings left and right." Author="LucaPazienza" PatchVer="1.0" AppVer="01.00" AppElf="eboot.bin" isEnabled="true">
         <PatchList>
             <Line Type="bytes" Address="0x0049413e" Value="c5fa5905ee425501c5fa5905069cfdff"/>
