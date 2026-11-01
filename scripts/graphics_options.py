@@ -20,7 +20,7 @@ RESOLUTION_PREFIX = 'Resolution Patch'
 FPS_PREFIX = 'Frame Rate Patch'
 SHADOW_PREFIX = 'Shadow Quality'
 # gravityrush.ini shadow_quality -> shadow map patch (patches/CUSA01113.xml); standard is the game's.
-SHADOW_PATCHES = {'high': 'Shadow Quality - 4096'}
+SHADOW_PATCHES = {'high': 'Shadow Quality - 4096', 'low': 'Shadow Quality - 1024', 'lowest': 'Shadow Quality - 512'}
 TEXTURE_FIX = 'Bug Fix - Texture Corruption Fix'
 # Always applied (not a setting): the gravity-shift camera's roll correction follows the frame time.
 CAMERA_FIX = 'Bug Fix - Gravity Shift Camera'
