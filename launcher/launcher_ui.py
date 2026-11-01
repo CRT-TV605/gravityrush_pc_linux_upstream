@@ -695,7 +695,7 @@ def aa_mode(ini):
         return upscaler
     return 'off' if ini.get('fxaa', '1') == '0' else 'fxaa'
 UPSCALER_CHOICES = [('0', 'Off'), ('1', 'FSR 1.0')]
-SHADOW_CHOICES = [('standard', 'Standard (2048)'), ('high', 'High (4096)')]
+SHADOW_CHOICES = [('lowest', 'Lowest (512)'), ('low', 'Low (1024)'),('standard', 'Standard (2048)'), ('high', 'High (4096)')]
 ANISOTROPY_CHOICES = [('0', "Game's own"), ('2', '2x'), ('4', '4x'), ('8', '8x'), ('16', '16x')]
 
 
