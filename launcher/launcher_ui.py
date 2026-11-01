@@ -135,6 +135,10 @@ _ROWS = [
      'F12 speichert immer Screenshots und Log für Fehlerberichte; damit wird das Spiel danach auch beendet.',
      'F12 siempre guarda capturas y registro para los informes; así también cierra el juego justo después.'),
     ('Shadow quality', 'Qualità ombre', 'Qualité des ombres', 'Schattenqualität', 'Calidad de sombras'),
+    ('Minimal (128)', 'Minima (128)', 'Minimale (128)', 'Minimal (128)', 'Mínima (128)'),
+    ('Very low (256)', 'Molto bassa (256)', 'Très basse (256)', 'Sehr niedrig (256)', 'Muy baja (256)'),
+    ('Lowest (512)', 'Più bassa (512)', 'La plus basse (512)', 'Niedrigste (512)', 'La más baja (512)'),
+    ('Low (1024)', 'Bassa (1024)', 'Basse (1024)', 'Niedrig (1024)', 'Baja (1024)'),
     ('Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Standard (2048)', 'Estándar (2048)'),
     ('High (4096)', 'Alta (4096)', 'Élevée (4096)', 'Hoch (4096)', 'Alta (4096)'),
     ('Sharper shadow edges and fewer jagged lines. Uses 256 MB of video memory.',
@@ -695,7 +699,7 @@ def aa_mode(ini):
         return upscaler
     return 'off' if ini.get('fxaa', '1') == '0' else 'fxaa'
 UPSCALER_CHOICES = [('0', 'Off'), ('1', 'FSR 1.0')]
-SHADOW_CHOICES = [('lowest', 'Lowest (512)'), ('low', 'Low (1024)'),('standard', 'Standard (2048)'), ('high', 'High (4096)')]
+SHADOW_CHOICES = [('minimal', 'Minimal (128)'), ('very_low', 'Very low (256)'), ('lowest', 'Lowest (512)'),('low', 'Low (1024)'), ('standard', 'Standard (2048)'), ('high', 'High (4096)')]
 ANISOTROPY_CHOICES = [('0', "Game's own"), ('2', '2x'), ('4', '4x'), ('8', '8x'), ('16', '16x')]
 
 
