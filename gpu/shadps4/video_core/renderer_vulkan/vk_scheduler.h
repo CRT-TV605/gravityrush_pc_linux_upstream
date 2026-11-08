@@ -953,7 +953,7 @@ private:
     bool is_rendering = false;
     // gow3: threaded recording
     std::unique_ptr<RecordChunk> record_chunk;
-    std::atomic<std::thread::id> recording_owner{}; // see OwnsRecording()
+    std::atomic<const void*> recording_owner{}; // see OwnsRecording()
     std::vector<std::unique_ptr<RecordChunk>> full_chunks;
     std::mutex recorder_mutex;
     std::condition_variable_any recorder_cv;
