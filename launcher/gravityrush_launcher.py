@@ -52,8 +52,8 @@ NEW_GROUP = {} if WINDOWS else {'start_new_session': True}
 # makes this build compare as an older version.
 VERSION = '0.1.15'
 RELEASES_API = os.environ.get('GR_UPDATE_API') or \
-    'https://api.github.com/repos/LucaPazienza/gravityrush_pc/releases?per_page=20'
-RELEASES_PAGE = 'https://github.com/LucaPazienza/gravityrush_pc/releases'
+    'https://api.github.com/repos/CRT-TV605/gravityrush_pc_linux_upstream/releases?per_page=20'
+RELEASES_PAGE = 'https://github.com/CRT-TV605/gravityrush_pc_linux_upstream/releases'
 INSTALLED_VERSION = os.environ.get('GR_UPDATE_TEST_FROM') or VERSION
 # This system's package of a release (packaging/windows/package.sh, packaging/linux/package.sh).
 RELEASE_ASSET = re.compile(r'GravityRush-PC-[0-9.]+-Windows\.zip' if WINDOWS else
