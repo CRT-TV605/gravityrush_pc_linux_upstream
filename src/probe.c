@@ -6,6 +6,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include "runtime.h"
+#include "runtime_menu.h"
 #include "gpu/gow3gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -455,6 +456,24 @@ static void install_rt_trace(uint64_t size) {
 }
 #endif
 
+/* GOW3_MENU_CONFIRM=circle: Circle confirms in the game's menus. Gravity Rush 01.00 (EU and US
+ * eboot) picks the menu's confirm and back buttons at start-up from its own region setting, not
+ * from the system parameter: `mov ecx,0xd; mov edx,0xe` at 0x29ae stores Cross (button 14) as
+ * confirm and Circle (13) as back; the regions that use Circle take the other branch. */
+static void menu_confirm_patch(uint64_t size) {
+    static const unsigned char cross[10] = {0xb9, 0x0d, 0, 0, 0, 0xba, 0x0e, 0, 0, 0};
+    if (!menu_circle_confirm()) return;
+    if (size < 0x29ae + sizeof(cross) || memcmp(image + 0x29ae, cross, sizeof(cross))) {
+        printf("Menu confirm: Circle requested, but this game build is not the one patched here\n");
+        return;
+    }
+    image[0x29af] = 0x0e;
+    image[0x29b4] = 0x0d;
+    printf("Menu confirm: Circle confirms, Cross goes back (game menus and the port's dialogs)\n");
+}
+
+/* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
+
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -782,6 +801,7 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+    menu_confirm_patch(size);
 #ifdef _WIN32
     char hooks_sfo[4096], hooks_serial[32]="";
     snprintf(hooks_sfo,sizeof(hooks_sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
