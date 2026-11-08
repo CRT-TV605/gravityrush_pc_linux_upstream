@@ -6,6 +6,7 @@
  * Every entry here is an explicit contract; unknown functions still stop. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "runtime_menu.h"
 #include "gpu/gow3gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
