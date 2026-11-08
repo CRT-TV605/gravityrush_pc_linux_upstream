@@ -180,7 +180,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
         // copy only stops protecting its page and is still published when the GPU is done.
         if (stale_readbacks && source == ReadbackSource::CpuWrite) {
             if (const unsigned released = pending_readbacks.ReleaseOutside(address, size, 64_KB,
-                    this { WatchReadback<false>(entry.address, entry.size); })) {
+                    [this](auto& entry) { WatchReadback<false>(entry.address, entry.size); })) {
                 readbacks_released += released;
                 UpdateReadbackSpan();
             }
@@ -224,7 +224,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
 void TextureCache::CancelReadbacks(VAddr address, u64 size) {
     if (!deferred_readbacks) return;
     std::scoped_lock lock{readback_mutex};
-    pending_readbacks.Cancel(address, size, this {
+    pending_readbacks.Cancel(address, size, [this](auto& entry) {
         if (entry.watched) WatchReadback<false>(entry.address, entry.size);
         ++readbacks_canceled;
     });
