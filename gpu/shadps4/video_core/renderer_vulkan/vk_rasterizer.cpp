@@ -2294,6 +2294,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
                 }
             }
+        }
 
         auto& set_write = set_writes[write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
