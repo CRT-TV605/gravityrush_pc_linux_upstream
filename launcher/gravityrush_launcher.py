@@ -176,7 +176,7 @@ APP_DEFAULTS = {'ui_language': '', 'game_dir': os.environ.get('GOW3_GAME_DIR', '
                 'prep_workers': '', 'copy_threads': '', 'record_thread': True, 'gpu': '',
                 'background_warmup': True, 'parallel_warmup': True, 'pipeline_binary_cache': True, 'perf_diag': False, 'frame_capture_key': False, 'frame_stats': False, 'gpu_profile': False,
                 'vk_validation': False, 'close_on_play': False, 'f12_quits': False,
-                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation',
+                'check_updates': False, 'game_patches': {}, 'controls': {}, 'pad_style': 'playstation', 'menu_confirm': 'cross',
                 'last_pkg': '', 'update_check': True,
                 # Play time in seconds, and the save backups made before every start.
                 'save_backup': True, 'save_backup_keep': 10}
@@ -505,6 +505,7 @@ def game_environment(s):
     for kind, name in (('key', 'GOW3_KEY_MAP'), ('pad', 'GOW3_PAD_MAP')):
         if value := control_map(s.get('controls', {}), kind):
             env[name] = value
+    env['GOW3_MENU_CONFIRM'] = 'circle' if s.get('menu_confirm') == 'circle' else 'cross'
     if s.get('gyro_sens'):
         env['GOW3_GYRO_SENS'] = str(s['gyro_sens'])
     env.setdefault('GOW3_FPS_LOG', '1')  # FPS and worst frame every 5 s in the log (diagnostics)
