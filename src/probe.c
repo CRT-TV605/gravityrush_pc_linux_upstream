@@ -473,8 +473,6 @@ static void menu_confirm_patch(uint64_t size) {
 }
 
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
-
-/* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
 static void apply_patches(const char *path, Segment *segments, uint64_t ns, const Reloc *relocs, uint64_t nr) {
