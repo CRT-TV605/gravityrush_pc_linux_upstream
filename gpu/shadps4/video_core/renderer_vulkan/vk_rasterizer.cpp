@@ -1516,7 +1516,7 @@ bool Rasterizer::BindHelperWanted() {
         return env[0] == '1';
     }
     // Measured neutral on 16 threads (docs/parallel_gpu.md): opt-in.
-    return false;
+    return true;
 }
 
 bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
@@ -2275,14 +2275,25 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 }
                 push_data.AddOffset(binding.buffer, adjust);
                 buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
-                bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
+                // gow3: a read-only copy in the stream buffer needs no barrier tracking: only
+                // the CPU writes that ring (the GPU only into fresh compute LDS ranges) and a
+                // range is reused only once the GPU is done with it. Most bindings of a draw
+                // are such constant copies (BarrierTracker was ~6% of the GPU thread).
+                const bool host_stream =
+                    !desc.is_written &&
+                    buffer == static_cast<const VideoCore::Buffer*>(&buffer_cache.GetStreamBuffer()) &&
+                    !Gow3Toggle::Disabled(Gow3Toggle::StreamReadTracking);
+                if (!host_stream) {
+                    bound_buffers.emplace_back(buffer, offset, size, desc.is_written);
+                }
                 if (desc.is_written) {
                     // Raw storage-buffer writes can also make an aliased cached image stale.
                     texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
                 }
-                needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
+                if (!host_stream) {
+                    needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
+                }
             }
-        }
 
         auto& set_write = set_writes[write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
