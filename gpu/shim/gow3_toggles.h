@@ -70,6 +70,9 @@ enum : std::uint64_t {
     TaaKeepNearerHistory = 1ull << 55,
     SceneMipBias = 1ull << 57, ///< negative LOD bias of G-buffer samplers at reduced scene sizes
     // Bits 20-29 are used as raw debug toggles by the camera/object motion and the upscaler.
+    ReadbackSpan = 1ull << 58, ///< ResolveReadbacks skips ranges outside the pending copies' pages
+    SubmissionReuse = 1ull << 59, ///< draw preparation reuses finished submissions' arrays
+    StreamReadTracking = 1ull << 60, ///< no barrier tracking for read-only stream buffer copies
 };
 inline bool Disabled(std::uint64_t bit) {
     return (__atomic_load_n(&runtime_disabled_optimizations, __ATOMIC_RELAXED) & bit) != 0;
