@@ -950,7 +950,7 @@ namespace {
 // buckets around DrawRecord's sections plus the pipeline selection in
 // Draw(), printed every 5 s. Zero cost when unset.
 struct DrawProfile {
-    static constexpr u32 NumBuckets = 9;
+    static constexpr u32 NumBuckets = 13;
     static constexpr const char* names[NumBuckets] = {
         "PrepareRenderState",
         "BindResources (textures+buffers)",
@@ -961,6 +961,10 @@ struct DrawProfile {
         "dynamic state + record",
         "pipeline select (Draw)",
         "DrawRecord total",
+        "sub: BindBuffers",
+        "sub: BindTextures (+samplers)",
+        "sub: ResolveVertex/Index",
+        "sub: EmitVertex/Index",
     };
     const bool enabled = std::getenv("GOW3_DRAW_PROFILE") != nullptr;
     std::atomic<u64> cycles[NumBuckets]{};
@@ -991,6 +995,11 @@ void SampleDrawProfile() {
                 static_cast<unsigned long long>(draws), double(total) / draws,
                 100.0 * double(total - sections) / double(total));
     for (u32 i = 0; i < 8; ++i) {
+        std::printf("  %-34s %5.1f%% of DrawRecord, %7.0f cycles/draw\n",
+                    DrawProfile::names[i], 100.0 * double(bucket[i]) / double(total),
+                    double(bucket[i]) / draws);
+    }
+    for (u32 i = 9; i < DrawProfile::NumBuckets; ++i) {
         std::printf("  %-34s %5.1f%% of DrawRecord, %7.0f cycles/draw\n",
                     DrawProfile::names[i], 100.0 * double(bucket[i]) / double(total),
                     double(bucket[i]) / draws);
@@ -1121,15 +1130,22 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     const auto state = BeginRendering(pipeline);
     const u64 dp_t5 = g_draw_profile.enabled ? __rdtsc() : 0;
 
+    const u64 dp2_vr0 = g_draw_profile.enabled ? __rdtsc() : 0;
     if (!inputs_resolved) {
         ResolveVertexBuffers(pipeline, draw_prepared);
         if (is_indexed) {
             ResolveIndexBuffer(index_offset);
         }
     }
+    const u64 dp2_vr1 = g_draw_profile.enabled ? __rdtsc() : 0;
     EmitVertexBuffers();
     if (is_indexed) {
         EmitIndexBuffer();
+    }
+    const u64 dp2_ve = g_draw_profile.enabled ? __rdtsc() : 0;
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[11].fetch_add(dp2_vr1 - dp2_vr0, std::memory_order_relaxed);
+        g_draw_profile.cycles[12].fetch_add(dp2_ve - dp2_vr1, std::memory_order_relaxed);
     }
 
     if (needs_barrier) {
@@ -1749,8 +1765,13 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
                               stage->samplers.size());
             stage->PushUd(binding, push_data);
             const PreparedStage* prepared = FindPreparedStage(*stage);
+            const u64 dp2_tb = g_draw_profile.enabled ? __rdtsc() : 0;
             BindBuffers(*stage, prepared, binding, push_data, set_write_index);
+            const u64 dp2_tt = g_draw_profile.enabled ? __rdtsc() : 0;
             BindTextures(*stage, prepared, binding, set_write_index, needs_barrier);
+            const u64 dp2_te = g_draw_profile.enabled ? __rdtsc() : 0;
+            g_draw_profile.cycles[9].fetch_add(dp2_tt - dp2_tb, std::memory_order_relaxed);
+            g_draw_profile.cycles[10].fetch_add(dp2_te - dp2_tt, std::memory_order_relaxed);
             uses_dma |= stage->uses_dma;
         }
     } else {
