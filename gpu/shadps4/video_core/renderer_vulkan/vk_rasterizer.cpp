@@ -2777,8 +2777,13 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
             return false;
         }
     }
-    u64 key = XXH3_64bits_withSeed(prepared->image_hashes, count * sizeof(u64),
-                                   reinterpret_cast<u64>(&stage));
+    // gow3: a cheap rotate-xor fold instead of XXH3 for the slot key — the full
+    // compare below (stage pointer, count, generations, every hash) validates the
+    // hit, so the key only needs to spread slots, not to be cryptographic.
+    u64 key = reinterpret_cast<u64>(&stage);
+    for (u32 i = 0; i < count; ++i) {
+        key = (key << 27 | key >> 37) ^ prepared->image_hashes[i];
+    }
     key |= 1; // 0 marks an empty slot
     auto& set = texture_sets[key % texture_sets.size()];
     slot = &set;
