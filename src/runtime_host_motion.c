@@ -13,6 +13,7 @@
  * a handheld is a gamepad whose top face is the screen, so pad = (x, z, -y), and the
  * acceleration changes sign. GOW3_HOST_MOTION=0 turns this off. */
 #include "gr_host_motion.h"
+#include <stddef.h>
 #ifdef _WIN32
 #define COBJMACROS
 #include <windows.h>
