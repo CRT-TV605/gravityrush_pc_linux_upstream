@@ -34,6 +34,8 @@ public:
     void BeginTextInput(const std::string& initial, const std::string& prompt);
     /// 0 while typing, 1 confirmed (Enter), 2 cancelled (Escape); text is UTF-8.
     int PollTextInput(std::string& text);
+    /// The game's render resolution (its display buffers); fullscreen follows it. Any thread.
+    void SetGameSize(s32 w, s32 h);
 
 private:
     std::atomic<s32> width, height;
@@ -42,6 +44,8 @@ private:
     bool text_requested{}, text_active{};
     int display_mode = -1; ///< applied Gow3Settings display mode (window thread)
     int refresh_rate = 0;  ///< applied Gow3Settings refresh rate (window thread)
+    std::atomic<s32> game_width{0}, game_height{0}; ///< the game's render size (any thread)
+    int applied_game_w = 0, applied_game_h = 0;      ///< last size the window thread applied
     void ApplyDisplayMode(int mode);
     void UpdateCursor();
     int cursor_hidden = -1; ///< unknown until the first successful SDL update (window thread)
