@@ -1516,7 +1516,7 @@ bool Rasterizer::BindHelperWanted() {
         return env[0] == '1';
     }
     // Measured neutral on 16 threads (docs/parallel_gpu.md): opt-in.
-    return true;
+    return false;
 }
 
 bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
