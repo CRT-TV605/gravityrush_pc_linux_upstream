@@ -289,7 +289,7 @@ static void key_axis(uint8_t *axis, bool negative, bool positive) {
  * a gyro uses the PC's own sensors when it has them (handhelds: gr_host_motion.h). */
 #include "gr_motion_filter.h"
 #include "gr_host_motion.h"
-static struct { SDL_Gamepad *pad; int gyro, accel, tilt, host; MotionFilter filter; uint64_t last_us; } motion;
+static struct { SDL_Gamepad *pad; SDL_JoystickID pad_id; int gyro, accel, tilt, host; MotionFilter filter; uint64_t last_us; } motion;
 static void motion_reset(void) { motion_filter_reset(&motion.filter); motion.last_us=0; }
 /* The orientation the game sees: the filtered one with its rotation angle scaled by the gyro
  * sensitivity (scaling the integration instead would fight the tilt correction). */
@@ -301,8 +301,13 @@ static void scaled_orientation(const float q[4], float sens, float out[4]) {
     out[0]=q[0]*k; out[1]=q[1]*k; out[2]=q[2]*k; out[3]=cosf(half);
 }
 static void sample_motion(SDL_Gamepad *g, PadData *d) {
-    if (g!=motion.pad) {
+    /* The SDL_Gamepad pointer is not a safe identity across a reconnect: close and reopen can
+     * return the same address, and then the sensors would stay switched off on the new instance
+     * (dead gyro after replugging the controller). The joystick instance ID is unique per
+     * connection, so it decides when the sensor setup must run again. */
+    if (g!=motion.pad || SDL_GetGamepadID(g)!=motion.pad_id) {
         motion.pad=g;
+        motion.pad_id=SDL_GetGamepadID(g);
         motion.gyro=SDL_GamepadHasSensor(g,SDL_SENSOR_GYRO) && SDL_SetGamepadSensorEnabled(g,SDL_SENSOR_GYRO,true);
         motion.accel=SDL_GamepadHasSensor(g,SDL_SENSOR_ACCEL) && SDL_SetGamepadSensorEnabled(g,SDL_SENSOR_ACCEL,true);
         motion_filter_init(&motion.filter);
