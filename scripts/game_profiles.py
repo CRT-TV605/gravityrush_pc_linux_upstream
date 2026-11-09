@@ -12,8 +12,8 @@ PROFILES = {
         'env': {},
     },
 }
+PROFILES['CUSA01130'] = PROFILES['CUSA01113']  # US release: the same eboot.bin
 DEFAULT = {'name': None, 'modules': ('libc.prx', 'libSceFios2.prx'), 'env': {}}
-
 
 def title_id(game):
     """TITLE_ID of a game folder, or None."""
