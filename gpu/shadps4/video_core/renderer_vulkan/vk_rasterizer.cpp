@@ -950,7 +950,7 @@ namespace {
 // buckets around DrawRecord's sections plus the pipeline selection in
 // Draw(), printed every 5 s. Zero cost when unset.
 struct DrawProfile {
-    static constexpr u32 NumBuckets = 13;
+    static constexpr u32 NumBuckets = 14;
     static constexpr const char* names[NumBuckets] = {
         "PrepareRenderState",
         "BindResources (textures+buffers)",
@@ -965,6 +965,7 @@ struct DrawProfile {
         "sub: BindTextures (+samplers)",
         "sub: ResolveVertex/Index",
         "sub: EmitVertex/Index",
+        "sub: ObtainBuffer (serial path)",
     };
     const bool enabled = std::getenv("GOW3_DRAW_PROFILE") != nullptr;
     std::atomic<u64> cycles[NumBuckets]{};
@@ -1004,6 +1005,10 @@ void SampleDrawProfile() {
                     DrawProfile::names[i], 100.0 * double(bucket[i]) / double(total),
                     double(bucket[i]) / draws);
     }
+    std::printf("  %-34s %5.1f%% of DrawRecord, %7.0f cycles/draw\n",
+                "sub: BindBuffers rest (computed)",
+                100.0 * double(bucket[9] - bucket[13]) / double(total),
+                double(bucket[9] - bucket[13]) / draws);
 }
 } // namespace
 
@@ -2369,8 +2374,14 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
                 }
-                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
-                    vsharp.base_address, size, desc.is_written, desc.is_formatted);
+    const u64 dp3_ob0 = g_draw_profile.enabled ? __rdtsc() : 0;
+    const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+        vsharp.base_address, size, desc.is_written, desc.is_formatted);
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[13].fetch_add(__rdtsc() - dp3_ob0,
+                                            std::memory_order_relaxed);
+    }
+
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
