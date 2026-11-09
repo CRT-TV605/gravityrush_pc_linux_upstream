@@ -595,6 +595,7 @@ def game_environment(s):
     if s.get('input_device') in ('controller', 'keyboard'):
         env['GOW3_INPUT'] = 'pad' if s['input_device'] == 'controller' else 'keyboard'
     env['GOW3_MOUSE_LOOK'] = '1' if s.get('mouse_look', True) and s.get('input_device') != 'controller' else '0'
+    env['GOW3_MOUSE_SENS'] = str(s.get('mouse_sens', 1.0))
     env['GOW3_MOUSE_INVERT_Y'] = '1' if s.get('mouse_invert') else '0'
     # Vita mode: the PC's own gyro (handhelds) when the controller has none (src/runtime_host_motion.c).
     env['GOW3_HOST_MOTION'] = '1' if s.get('vita_mode', True) else '0'
