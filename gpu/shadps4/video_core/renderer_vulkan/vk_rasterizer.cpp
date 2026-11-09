@@ -944,7 +944,62 @@ bool Rasterizer::FilterDrawPasses() const {
     return !(mode == Mode::Disable && (depth_copy || stencil_copy));
 }
 
+namespace {
+// gow3: GOW3_DRAW_PROFILE=1 — where the per-draw time goes on the thread that
+// runs draws (the GPU command thread in the default configuration). rdtsc
+// buckets around DrawRecord's sections plus the pipeline selection in
+// Draw(), printed every 5 s. Zero cost when unset.
+struct DrawProfile {
+    static constexpr u32 NumBuckets = 9;
+    static constexpr const char* names[NumBuckets] = {
+        "PrepareRenderState",
+        "BindResources (textures+buffers)",
+        "BeginRendering",
+        "vertex/index + barriers",
+        "object motion",
+        "descriptor writes + jitter",
+        "dynamic state + record",
+        "pipeline select (Draw)",
+        "DrawRecord total",
+    };
+    const bool enabled = std::getenv("GOW3_DRAW_PROFILE") != nullptr;
+    std::atomic<u64> cycles[NumBuckets]{};
+    std::atomic<u64> draws{};
+};
+
+DrawProfile g_draw_profile;
+
+void SampleDrawProfile() {
+    static auto window = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    if (now - window < std::chrono::seconds(5)) {
+        return;
+    }
+    window = now;
+    const u64 draws = std::max<u64>(1, g_draw_profile.draws.exchange(0));
+    u64 bucket[DrawProfile::NumBuckets]{};
+    u64 sections = 0;
+    for (u32 i = 0; i < DrawProfile::NumBuckets; ++i) {
+        bucket[i] = g_draw_profile.cycles[i].exchange(0);
+        if (i < 7) {
+            sections += bucket[i];
+        }
+    }
+    const u64 total = std::max<u64>(1, bucket[8]);
+    std::printf("Draw profile: %llu draws; DrawRecord %.0f cycles/draw (gaps between the "
+                "sections %.1f%%)\n",
+                static_cast<unsigned long long>(draws), double(total) / draws,
+                100.0 * double(total - sections) / double(total));
+    for (u32 i = 0; i < 8; ++i) {
+        std::printf("  %-34s %5.1f%% of DrawRecord, %7.0f cycles/draw\n",
+                    DrawProfile::names[i], 100.0 * double(bucket[i]) / double(total),
+                    double(bucket[i]) / draws);
+    }
+}
+} // namespace
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
+
     RENDERER_TRACE;
     Gow3Stats::draws.fetch_add(1, std::memory_order_relaxed);
 
@@ -964,8 +1019,13 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
             return;
         }
     }
+    const u64 dp_t0 = g_draw_profile.enabled ? __rdtsc() : 0;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline({}, prepared);
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[7].fetch_add(__rdtsc() - dp_t0, std::memory_order_relaxed);
+    }
     const PreparedDraw* used_prepared = pipeline_cache.UsedPrepared();
+
     if (prepared) {
         draw_prep->Count(pipeline != nullptr &&
                          prepared->state.load(std::memory_order_acquire) == PreparedDraw::Ready &&
@@ -1031,7 +1091,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
     motion_geometry = 0;
 
+    // gow3: GOW3_DRAW_PROFILE=1 — rdtsc buckets of the draw path (printed every 5 s).
+    const u64 dp_t0 = g_draw_profile.enabled ? __rdtsc() : 0;
     PrepareRenderState(pipeline);
+    const u64 dp_t1 = g_draw_profile.enabled ? __rdtsc() : 0;
     if (tonemap_draw) {
         upscaler->OnTonemapTarget(cb_descs[0].first);
     }
@@ -1045,14 +1108,18 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // gow3: vertex and index buffers are resolved while the helper binds textures (their
     // commands are recorded after BeginRendering, as before).
     draw_inputs = {pipeline, draw_prepared, index_offset, is_indexed, true, false};
+    const u64 dp_t2 = g_draw_profile.enabled ? __rdtsc() : 0;
     const bool bound = BindResources(pipeline);
+    const u64 dp_t3 = g_draw_profile.enabled ? __rdtsc() : 0;
     bind_prepared = nullptr; // indirect draws and dispatches bind without prepared sharps
     const bool inputs_resolved = draw_inputs.resolved;
     draw_inputs.pending = false;
     if (!bound) {
         return;
     }
+    const u64 dp_t4 = g_draw_profile.enabled ? __rdtsc() : 0;
     const auto state = BeginRendering(pipeline);
+    const u64 dp_t5 = g_draw_profile.enabled ? __rdtsc() : 0;
 
     if (!inputs_resolved) {
         ResolveVertexBuffers(pipeline, draw_prepared);
@@ -1068,6 +1135,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (needs_barrier) {
         runtime.FlushBarriers();
     }
+    const u64 dp_t6 = g_draw_profile.enabled ? __rdtsc() : 0;
 
     // gow3: screen-space (clip disabled) draws into the upscaler's output-size images.
     push_data.xscale *= target_scale[0];
@@ -1152,10 +1220,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .index_count = regs.num_indices,
                 .instances = regs.num_instances.NumInstances(),
                 .first_instance = first_instance,
-                .vertices = range,
             });
         }
     }
+    const u64 dp_t7 = g_draw_profile.enabled ? __rdtsc() : 0;
     pipeline->BindResources(set_writes, push_data);
     // gow3: jitter everything drawn with a depth test against the scene depth. Full-screen
     // passes test nothing (or always pass) and stay put: a shifted full-screen quad leaves an edge
@@ -1168,6 +1236,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         regs.depth_control.depth_func != AmdGpu::CompareFunc::Always) {
         draw_jitter = upscaler->Jitter();
     }
+    const u64 dp_t8 = g_draw_profile.enabled ? __rdtsc() : 0;
     UpdateDynamicState(pipeline, is_indexed);
     MarkPass(pipeline, state);
     scheduler.BeginRendering(state);
@@ -1215,6 +1284,20 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
 
     ResetBindings(false);
     scheduler.KickRecording();
+    if (g_draw_profile.enabled) {
+        const u64 dp_t9 = __rdtsc();
+        g_draw_profile.cycles[0].fetch_add(dp_t1 - dp_t0, std::memory_order_relaxed);
+        g_draw_profile.cycles[1].fetch_add(dp_t3 - dp_t2, std::memory_order_relaxed);
+        g_draw_profile.cycles[2].fetch_add(dp_t5 - dp_t4, std::memory_order_relaxed);
+        g_draw_profile.cycles[3].fetch_add(dp_t6 - dp_t5, std::memory_order_relaxed);
+        g_draw_profile.cycles[4].fetch_add(dp_t7 - dp_t6, std::memory_order_relaxed);
+        g_draw_profile.cycles[5].fetch_add(dp_t8 - dp_t7, std::memory_order_relaxed);
+        g_draw_profile.cycles[6].fetch_add(dp_t9 - dp_t8, std::memory_order_relaxed);
+        g_draw_profile.cycles[8].fetch_add(dp_t9 - dp_t0, std::memory_order_relaxed);
+        if ((g_draw_profile.draws.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
+            SampleDrawProfile();
+        }
+    }
 }
 
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
