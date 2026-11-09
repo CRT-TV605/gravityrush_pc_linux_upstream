@@ -28,6 +28,7 @@
 #include "core/libraries/videoout/driver.h"
 #include "core/libraries/videoout/videoout_error.h"
 #include "imgui/renderer/imgui_core.h"
+#include "sdl_window.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -36,6 +37,9 @@
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
+// gow3: the window (gow3gpu.cpp), told the game's render resolution when it registers its
+// display buffers, so fullscreen (and so the swapchain) can match it.
+extern Frontend::WindowSDL* g_window;
 
 namespace Vulkan {
 extern std::atomic<u64> g_gow3_compile_ns;
@@ -226,6 +230,12 @@ int VideoOutDriver::RegisterBuffers(VideoOutPort* port, s32 startIndex, void* co
              attribute->height, attribute->pitch_in_pixel, attribute->option);
     std::printf("VideoOut: %d display buffers of %ux%u\n", bufferNum, attribute->width,
                 attribute->height);
+    // gow3: the game's render resolution (with the resolution patch, 1280x720): fullscreen and
+    // the swapchain follow it instead of the desktop's size (WindowSDL::SetGameSize).
+    if (g_window) {
+        g_window->SetGameSize(attribute->width, attribute->height);
+    }
+
 
     auto& group = port->groups[group_index];
     std::memcpy(&group.attrib, attribute, sizeof(BufferAttribute));
