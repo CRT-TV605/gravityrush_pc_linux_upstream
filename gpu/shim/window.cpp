@@ -154,11 +154,28 @@ void WindowSDL::ApplyDisplayMode(int mode) {
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
         const bool exclusive = mode == Gow3Graphics::Fullscreen && desktop;
+        /* gow3: exclusive fullscreen at the game's own resolution (GOW3_FULLSCREEN_MATCH, on by
+         * default): the window, and so the swapchain, matches the image the game renders (720p
+         * with the resolution patch) instead of the desktop's size; the monitor or the
+         * compositor scales it up, and the present pass stays as small as the game's image.
+         * GOW3_FULLSCREEN_MATCH=0 keeps the old desktop-sized behaviour. */
+        static const bool match = [] {
+            const char* env = std::getenv("GOW3_FULLSCREEN_MATCH");
+            return !(env && env[0] == '0');
+        }();
+        const int game_w = game_width.load(std::memory_order_relaxed);
+        const int game_h = game_height.load(std::memory_order_relaxed);
+        const int desktop_w = desktop ? desktop->w : 0, desktop_h = desktop ? desktop->h : 0;
+        const int mode_w = exclusive && match && game_w > 0 ? game_w : desktop_w;
+        const int mode_h = exclusive && match && game_h > 0 ? game_h : desktop_h;
         SDL_DisplayMode chosen{};
         const SDL_DisplayMode* target = desktop;
-        if (exclusive && refresh_rate > 0 &&
-            SDL_GetClosestFullscreenDisplayMode(display, desktop->w, desktop->h, float(refresh_rate), false,
-                                                &chosen)) {
+        if (exclusive && mode_w > 0 &&
+            SDL_GetClosestFullscreenDisplayMode(
+                display, mode_w, mode_h,
+                refresh_rate > 0 ? float(refresh_rate)
+                                  : (desktop ? desktop->refresh_rate : 0.0f),
+                false, &chosen)) {
             target = &chosen;
         }
         if (exclusive) {
@@ -171,6 +188,16 @@ void WindowSDL::ApplyDisplayMode(int mode) {
     }
     SDL_SyncWindow(window);
     std::printf("Window: %s\n", Gow3Graphics::DisplayModeNames[mode]);
+}
+
+/* The game's render resolution (its display buffers, registered once the game boots, which is
+ * after the window exists): exclusive fullscreen follows it, so the swapchain matches the image
+ * the game renders instead of the desktop's size. Safe to call from any thread. */
+void WindowSDL::SetGameSize(s32 w, s32 h) {
+    if (w > 0 && h > 0) {
+        game_width.store(w, std::memory_order_relaxed);
+        game_height.store(h, std::memory_order_relaxed);
+    }
 }
 
 WindowSDL::~WindowSDL() {
@@ -232,8 +259,14 @@ bool WindowSDL::PollEvents() {
     if (!text_active) {
         Gow3Overlay::UpdateTextInput(window);
     }
+    const int game_w_now = game_width.load(std::memory_order_relaxed);
+    const int game_h_now = game_height.load(std::memory_order_relaxed);
     if (const int mode = Gow3Settings::Get().display_mode;
-        mode != display_mode || Gow3Settings::Get().refresh_rate != refresh_rate) {
+        mode != display_mode || Gow3Settings::Get().refresh_rate != refresh_rate ||
+        (mode == Gow3Graphics::Fullscreen &&
+         (game_w_now != applied_game_w || game_h_now != applied_game_h))) {
+        applied_game_w = game_w_now;
+        applied_game_h = game_h_now;
         ApplyDisplayMode(mode);
     }
     // gow3: mouse look captures the cursor while the game has the focus and nothing of the port's
