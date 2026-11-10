@@ -449,6 +449,19 @@ _ROWS = [
     ('The pointer stays in the game window while you play; the Insert menu or Alt+Tab frees it.', 'Il puntatore resta nella finestra del gioco mentre giochi; il menu Insert o Alt+Tab lo liberano.', 'Le pointeur reste dans la fenêtre du jeu pendant la partie ; le menu Inser ou Alt+Tab le libère.', 'Der Zeiger bleibt beim Spielen im Spielfenster; das Einfg-Menü oder Alt+Tab gibt ihn frei.', 'El puntero se queda en la ventana del juego mientras juegas; el menú Insert o Alt+Tab lo liberan.'),
     ('Mouse sensitivity', 'Sensibilità del mouse', 'Sensibilité de la souris', 'Mausempfindlichkeit', 'Sensibilidad del ratón'),
     ('Invert vertical camera', 'Inverti visuale verticale', 'Inverser la caméra verticale', 'Vertikale Kamera umkehren', 'Invertir cámara vertical'),
+    ('Use this computer\'s motion sensors', 'Usa i sensori di movimento di questo computer',
+     'Utiliser les capteurs de mouvement de cet ordinateur', 'Bewegungssensoren dieses Computers verwenden',
+     'Usar los sensores de movimiento de este equipo'),
+    ('For a gamepad without a gyroscope: the sensors of this computer itself (a handheld PC) '
+     'tilt the camera like a PS Vita. Not active on Linux yet.',
+     'Per un gamepad senza giroscopio: i sensori di questo computer (PC portatile) inclinano la '
+     'visuale come una PS Vita. Non ancora attivo su Linux.',
+     'Pour une manette sans gyroscope : les capteurs de cet ordinateur (PC portable) inclinent '
+     'la caméra comme une PS Vita. Pas encore actif sur Linux.',
+     'Für einen Controller ohne Gyroskop: Die Sensoren dieses Computers (Handheld-PC) neigen die '
+     'Kamera wie bei einer PS Vita. Auf Linux noch nicht aktiv.',
+     'Para un mando sin giroscopio: los sensores de este equipo (PC portátil) inclinan la cámara '
+     'como una PS Vita. Todavía no activo en Linux.'),
     ('Nothing', 'Nessuna', 'Rien', 'Nichts', 'Nada'),
     ('Left button', 'Tasto sinistro', 'Bouton gauche', 'Linke Taste', 'Botón izquierdo'),
     ('Right button', 'Tasto destro', 'Bouton droit', 'Rechte Taste', 'Botón derecho'),
@@ -2172,6 +2185,13 @@ class LauncherWindow:
                 Slider(self, control, 0.5, 3.0, 0.1, value, changed).widget.pack(side='left')
                 shown.pack(side='left')
             self.row(body, 'Sensitivity', gyro)
+            # Vita mode: the computer's own sensors tilt the camera when the gamepad has no gyro
+            # (the launcher's vita_mode setting, GOW3_HOST_MOTION).
+            self.toggle_row(body, 'Use this computer\'s motion sensors', self.app.get('vita_mode', True),
+                            lambda v: self.set_app('vita_mode', v),
+                            hint='For a gamepad without a gyroscope: the sensors of this computer itself '
+                                 '(a handheld PC) tilt the camera like a PS Vita. '
+                                 'Not active on Linux yet.')
         self.footer(foot, [('Reset', self.reset_controls, False), ('Close', lambda: self.open_page(None), True)])
 
     def button_label(self, button):
@@ -2349,7 +2369,7 @@ class LauncherWindow:
         self.app['controls'] = {}
         self.app['gyro_sens'] = 1.4
         self.app.update({'input_device': 'auto', 'button_names': 'auto', 'mouse_look': True, 'mouse_sens': 1.0,
-                         'mouse_invert': False})
+                         'mouse_invert': False, 'vita_mode': True})
         self.save()
         self.open_page('controls')
         self.toast(t('Defaults restored'))
