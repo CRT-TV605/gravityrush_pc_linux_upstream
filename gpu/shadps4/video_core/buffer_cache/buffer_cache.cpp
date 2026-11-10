@@ -24,12 +24,52 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/texture_cache.h"
 
-#include <vk_mem_alloc.h>
+    #include <vk_mem_alloc.h>
+    #include <x86intrin.h>
 
 namespace VideoCore {
 
 static constexpr size_t GDS_BUFFER_SIZE = 64_KB;
-static constexpr size_t STREAM_BUFFER_SIZE = 128_MB;
+    static constexpr size_t STREAM_BUFFER_SIZE = 128_MB;
+
+    namespace {
+    // gow3: GOW3_DRAW_PROFILE=1 — level 5: what one BufferCache::ObtainBuffer
+    // call costs, in rdtsc buckets, printed every 5 s. Zero cost when unset.
+    struct ObtainProfile {
+        static constexpr u32 NumBuckets = 6;
+        const bool enabled = std::getenv("GOW3_DRAW_PROFILE") != nullptr;
+        std::atomic<u64> cycles[NumBuckets]{};
+        std::atomic<u64> calls{};
+        std::atomic<u64> stream_calls{};
+        std::atomic<u64> arena_calls{};
+    };
+    ObtainProfile g_ob_profile;
+
+    void SampleObtainProfile() {
+        static auto window = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - window < std::chrono::seconds(5)) {
+            return;
+        }
+        window = now;
+        const u64 calls = std::max<u64>(1, g_ob_profile.calls.exchange(0));
+        u64 bucket[ObtainProfile::NumBuckets]{};
+        for (u32 i = 0; i < ObtainProfile::NumBuckets; ++i) {
+            bucket[i] = g_ob_profile.cycles[i].exchange(0);
+        }
+        const u64 stream = g_ob_profile.stream_calls.exchange(0);
+        const u64 arena = g_ob_profile.arena_calls.exchange(0);
+        std::printf("Obtain profile: %llu calls, %.0f cycles/call: ResolveReadbacks %.0f, "
+                    "GpuModified %.0f, stream %.0f, arena prep %.0f, sync %.0f "
+                    "(stream %llu, arena %llu calls)\n",
+                    static_cast<unsigned long long>(calls),
+                    double(bucket[5]) / calls, double(bucket[0]) / calls,
+                    double(bucket[1]) / calls, double(bucket[2]) / calls,
+                    double(bucket[3]) / calls, double(bucket[4]) / calls,
+                    static_cast<unsigned long long>(stream),
+                    static_cast<unsigned long long>(arena));
+    }
+    } // namespace
 
 static constexpr auto ARENA_USAGE =
     vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst |
@@ -305,14 +345,25 @@ void PrintBufferStats() {
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
+    const u64 op_t0 = g_ob_profile.enabled ? __rdtsc() : 0;
+    const u64 op_rb0 = g_ob_profile.enabled ? __rdtsc() : 0;
     texture_cache.ResolveReadbacks(device_addr, size, true, ReadbackSource::BufferObtain);
+    if (g_ob_profile.enabled) {
+        g_ob_profile.cycles[0].fetch_add(__rdtsc() - op_rb0, std::memory_order_relaxed);
+    }
     const bool stats = BufferStatsEnabled();
     if (stats) {
         PrintBufferStats();
         NoteHotUse(device_addr, size);
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
+    const u64 op_gm0 = g_ob_profile.enabled ? __rdtsc() : 0;
+    const bool gpu_modified = IsRegionGpuModified(device_addr, size);
+    if (g_ob_profile.enabled) {
+        g_ob_profile.cycles[1].fetch_add(__rdtsc() - op_gm0, std::memory_order_relaxed);
+    }
+    if (!is_written && size <= STREAM_THRESHOLD && !gpu_modified) {
+        const u64 op_st0 = g_ob_profile.enabled ? __rdtsc() : 0;
         if (stats) {
             auto& region = Stats().regions[RegionKey(device_addr)];
             ++region.stream_count;
@@ -331,20 +382,46 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
                     .size = size,
                     .extra = reinterpret_cast<u64>(static_cast<Buffer*>(&stream_buffer)),
                 });
-                return {&stream_buffer, *offset};
+    if (g_ob_profile.enabled) {
+        const u64 op_now = __rdtsc();
+        g_ob_profile.cycles[2].fetch_add(op_now - op_st0, std::memory_order_relaxed);
+        g_ob_profile.cycles[5].fetch_add(op_now - op_t0, std::memory_order_relaxed);
+        g_ob_profile.stream_calls.fetch_add(1, std::memory_order_relaxed);
+        if ((g_ob_profile.calls.fetch_add(1, std::memory_order_relaxed) & 4095) == 0) {
+            SampleObtainProfile();
+        }
+    }
+    return {&stream_buffer, *offset};
             }
         }
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
-        return {&stream_buffer, offset};
+    if (g_ob_profile.enabled) {
+        const u64 op_now = __rdtsc();
+        g_ob_profile.cycles[2].fetch_add(op_now - op_st0, std::memory_order_relaxed);
+        g_ob_profile.cycles[5].fetch_add(op_now - op_t0, std::memory_order_relaxed);
+        g_ob_profile.stream_calls.fetch_add(1, std::memory_order_relaxed);
+        if ((g_ob_profile.calls.fetch_add(1, std::memory_order_relaxed) & 4095) == 0) {
+            SampleObtainProfile();
+        }
+    }
+    return {&stream_buffer, offset};
     }
     const u64 first_block = device_addr >> block_shift;
     const u64 last_block = (device_addr + size - 1) >> block_shift;
+    const u64 op_ar0 = g_ob_profile.enabled ? __rdtsc() : 0;
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
+    const u64 op_ar1 = g_ob_profile.enabled ? __rdtsc() : 0;
+    if (g_ob_profile.enabled) {
+        g_ob_profile.cycles[3].fetch_add(op_ar1 - op_ar0, std::memory_order_relaxed);
+    }
     const u64 uploaded_before = Gow3Stats::buffer_upload_bytes.load(std::memory_order_relaxed);
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
+    if (g_ob_profile.enabled) {
+        g_ob_profile.cycles[4].fetch_add(__rdtsc() - op_ar1, std::memory_order_relaxed);
+    }
     if (stats) {
         auto& region = Stats().regions[RegionKey(device_addr)];
         ++region.arena_count;
@@ -354,6 +431,14 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
+    }
+    if (g_ob_profile.enabled) {
+        const u64 op_now = __rdtsc();
+        g_ob_profile.cycles[5].fetch_add(op_now - op_t0, std::memory_order_relaxed);
+        g_ob_profile.arena_calls.fetch_add(1, std::memory_order_relaxed);
+        if ((g_ob_profile.calls.fetch_add(1, std::memory_order_relaxed) & 4095) == 0) {
+            SampleObtainProfile();
+        }
     }
     return {arena, arena->Offset(device_addr)};
 }
