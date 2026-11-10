@@ -950,7 +950,7 @@ namespace {
 // buckets around DrawRecord's sections plus the pipeline selection in
 // Draw(), printed every 5 s. Zero cost when unset.
 struct DrawProfile {
-    static constexpr u32 NumBuckets = 14;
+    static constexpr u32 NumBuckets = 18;
     static constexpr const char* names[NumBuckets] = {
         "PrepareRenderState",
         "BindResources (textures+buffers)",
@@ -966,6 +966,10 @@ struct DrawProfile {
         "sub: ResolveVertex/Index",
         "sub: EmitVertex/Index",
         "sub: ObtainBuffer (serial path)",
+        "sub: Resolve ObtainBuffer (VB+IB)",
+        "sub: UpdateDynamicState",
+        "sub: MarkPass + BeginRendering rec",
+        "sub: ResetBindings + KickRecording",
     };
     const bool enabled = std::getenv("GOW3_DRAW_PROFILE") != nullptr;
     std::atomic<u64> cycles[NumBuckets]{};
@@ -1009,6 +1013,10 @@ void SampleDrawProfile() {
                 "sub: BindBuffers rest (computed)",
                 100.0 * double(bucket[9] - bucket[13]) / double(total),
                 double(bucket[9] - bucket[13]) / draws);
+    const u64 dp4_tail = bucket[6] - bucket[15] - bucket[16] - bucket[17];
+    std::printf("  %-34s %5.1f%% of DrawRecord, %7.0f cycles/draw\n",
+                "sub: draw record tail (computed)", 100.0 * double(dp4_tail) / double(total),
+                double(dp4_tail) / draws);
 }
 } // namespace
 
@@ -1258,9 +1266,17 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         draw_jitter = upscaler->Jitter();
     }
     const u64 dp_t8 = g_draw_profile.enabled ? __rdtsc() : 0;
+    const u64 dp4_us0 = g_draw_profile.enabled ? __rdtsc() : 0;
     UpdateDynamicState(pipeline, is_indexed);
+    const u64 dp4_us1 = g_draw_profile.enabled ? __rdtsc() : 0;
     MarkPass(pipeline, state);
     scheduler.BeginRendering(state);
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[15].fetch_add(dp4_us1 - dp4_us0,
+                                             std::memory_order_relaxed);
+        g_draw_profile.cycles[16].fetch_add(__rdtsc() - dp4_us1,
+                                            std::memory_order_relaxed);
+    }
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
     const auto& fetch_shader = pipeline->GetFetchShader();
@@ -1303,10 +1319,12 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     DebugState.IncDrawCall();
 
+    const u64 dp4_r0 = g_draw_profile.enabled ? __rdtsc() : 0;
     ResetBindings(false);
     scheduler.KickRecording();
     if (g_draw_profile.enabled) {
         const u64 dp_t9 = __rdtsc();
+        g_draw_profile.cycles[17].fetch_add(dp_t9 - dp4_r0, std::memory_order_relaxed);
         g_draw_profile.cycles[0].fetch_add(dp_t1 - dp_t0, std::memory_order_relaxed);
         g_draw_profile.cycles[1].fetch_add(dp_t3 - dp_t2, std::memory_order_relaxed);
         g_draw_profile.cycles[2].fetch_add(dp_t5 - dp_t4, std::memory_order_relaxed);
@@ -1986,11 +2004,16 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     }
 
     // Map buffers for merged ranges
+    const u64 dp4_vb0 = g_draw_profile.enabled ? __rdtsc() : 0;
     for (auto& range : ranges_merged) {
         const u64 size = memory->ClampRangeSize(range.base_address, range.GetSize());
         std::tie(range.buffer, range.offset) =
             buffer_cache.ObtainBuffer(range.base_address, size, false);
         needs_barrier |= runtime.IsBufferAccessed(range.buffer, range.offset, size);
+    }
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[14].fetch_add(__rdtsc() - dp4_vb0,
+                                            std::memory_order_relaxed);
     }
 
     // Bind vertex buffers
@@ -2046,9 +2069,14 @@ void Rasterizer::ResolveIndexBuffer(u32 index_offset) {
 
     // Bind index buffer.
     const u32 index_buffer_size = regs.num_indices * index_size;
+    const u64 dp4_ib0 = g_draw_profile.enabled ? __rdtsc() : 0;
     const auto [buffer, offset] =
         buffer_cache.ObtainBuffer(index_address, index_buffer_size, false);
     needs_barrier |= runtime.IsBufferAccessed(buffer, offset, index_buffer_size);
+    if (g_draw_profile.enabled) {
+        g_draw_profile.cycles[14].fetch_add(__rdtsc() - dp4_ib0,
+                                            std::memory_order_relaxed);
+    }
     index_bind = {buffer->Handle(), offset, index_type};
 }
 
