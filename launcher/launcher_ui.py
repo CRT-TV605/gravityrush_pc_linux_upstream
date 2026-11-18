@@ -73,9 +73,13 @@ _ROWS = [
     ('Version {}', 'Versione {}', 'Version {}', 'Version {}', 'Versión {}'),
     ('FOLDERS', 'CARTELLE', 'DOSSIERS', 'ORDNER', 'CARPETAS'),
     ('Game folder', 'Cartella del gioco', 'Dossier du jeu', 'Spielordner', 'Carpeta del juego'),
-    ('Your game dump (eboot.bin, sce_module, sce_sys).', 'Il tuo dump del gioco (eboot.bin, sce_module, sce_sys).',
-     'Votre copie du jeu (eboot.bin, sce_module, sce_sys).', 'Dein Spiel-Dump (eboot.bin, sce_module, sce_sys).',
-     'Tu copia del juego (eboot.bin, sce_module, sce_sys).'),
+    ('Zar image', 'Immagine .zar', 'Image .zar', '.zar-Image', 'Imagen .zar'),
+    ('All files', 'Tutti i file', 'Tous les fichiers', 'Alle Dateien', 'Todos los archivos'),
+    ('Your game dump (eboot.bin, sce_module, sce_sys), or a .zar image.',
+     'Il tuo dump del gioco (eboot.bin, sce_module, sce_sys), o una immagine .zar.',
+     'Votre copie du jeu (eboot.bin, sce_module, sce_sys) ou une image .zar.',
+     'Dein Spiel-Dump (eboot.bin, sce_module, sce_sys) oder ein .zar-Image.',
+     'Tu copia del juego (eboot.bin, sce_module, sce_sys) o una imagen .zar.'),
     ('Saves folder', 'Cartella dei salvataggi', 'Dossier des sauvegardes', 'Speicherordner', 'Carpeta de partidas'),
     ('Empty: the launcher data folder (it also holds the shader cache).',
      'Se vuota usa la cartella dei dati del launcher (contiene anche la cache degli shader).',
@@ -397,7 +401,11 @@ _ROWS = [
     ('Version', 'Versione', 'Version', 'Version', 'Versión'),
     ('Status', 'Stato', 'État', 'Status', 'Estado'),
     ('Found, ready to play', 'Trovato, pronto per giocare', 'Trouvé, prêt à jouer', 'Gefunden, spielbereit', 'Encontrado, listo para jugar'),
-    ('Not found: choose the folder that contains eboot.bin', 'Non trovato: scegli la cartella che contiene eboot.bin', 'Introuvable : choisissez le dossier qui contient eboot.bin', 'Nicht gefunden: wähle den Ordner, der eboot.bin enthält', 'No encontrado: elige la carpeta que contiene eboot.bin'),
+    ('Not found: choose the folder that contains eboot.bin, or a .zar image',
+     'Non trovato: scegli la cartella che contiene eboot.bin, o una immagine .zar',
+     'Introuvable : choisissez le dossier qui contient eboot.bin, ou une image .zar',
+     'Nicht gefunden: wähle den Ordner mit eboot.bin oder ein .zar-Image',
+     'No encontrado: elige la carpeta que contiene eboot.bin, o una imagen .zar'),
     ('Back up before every start', 'Backup prima di ogni avvio', 'Sauvegarde avant chaque lancement', 'Sicherung vor jedem Start', 'Copia antes de cada inicio'),
     ('Copies your saves before the game starts, so you can always go back.', 'Copia i salvataggi prima che il gioco parta, così puoi sempre tornare indietro.', 'Copie vos sauvegardes avant le lancement du jeu : vous pouvez toujours revenir en arrière.', 'Kopiert deine Spielstände vor dem Spielstart, damit du immer zurück kannst.', 'Copia tus partidas antes de que empiece el juego, para poder volver atrás siempre.'),
     ('Backups to keep', 'Backup da tenere', 'Sauvegardes à garder', 'Zu behaltende Sicherungen', 'Copias a conservar'),
@@ -1825,8 +1833,7 @@ class LauncherWindow:
             tk.Label(line, text=t(hint), bg=CARD, fg=TEXT2, font=self.font(12.5), anchor='w', justify='left',
                      wraplength=self.px(PANEL_W - 120)).pack(fill='x', pady=(0, self.px(10)))
         DashLine(self, line).widget.pack(fill='x')
-
-    def folder_row(self, parent, title, key, hint):
+    def folder_row(self, parent, title, key, hint, images=False):
         tk = self.tk
         line = tk.Frame(parent, bg=CARD)
         line.pack(fill='x', pady=(self.px(10), 0))
@@ -1843,7 +1850,13 @@ class LauncherWindow:
         var.trace_add('write', changed)
 
         def browse():
-            chosen = self.filedialog.askdirectory(initialdir=var.get() or str(self.logic.PORT_DIR))
+            if images:
+                # A game folder, or a .zar game image (the packed dump the port reads in place).
+                chosen = self.filedialog.askopenfilename(
+                    initialdir=var.get() or str(self.logic.PORT_DIR),
+                    filetypes=[(t('Zar image'), '*.zar'), (t('All files'), '*')])
+            else:
+                chosen = self.filedialog.askdirectory(initialdir=var.get() or str(self.logic.PORT_DIR))
             if chosen:
                 var.set(str(Path(chosen)))
         ImageButton(self, fields, t('Browse…'), browse).widget.pack(side='left', padx=(self.px(8), 0))
@@ -1885,7 +1898,8 @@ class LauncherWindow:
     def page_game(self, body, foot):
         logic = self.logic
         self.sec(body, 'FOLDERS', first=True)
-        self.folder_row(body, 'Game folder', 'game_dir', 'Your game dump (eboot.bin, sce_module, sce_sys).')
+        self.folder_row(body, 'Game folder', 'game_dir',
+                        'Your game dump (eboot.bin, sce_module, sce_sys), or a .zar image.', images=True)
         self.folder_row(body, 'Saves folder', 'user_dir', 'Empty: the launcher data folder (it also holds the shader cache).')
         self.sec(body, 'MODS')
         self.toggle_row(body, 'Use mods', self.app.get('mods_enabled', True), lambda v: self.set_app('mods_enabled', v),
@@ -1906,7 +1920,7 @@ class LauncherWindow:
             self.row(body, title, lambda c, v=value: self.tk.Label(c, text=v, bg=CARD, fg=TEXT2,
                                                                   font=self.font(14)).pack(side='right'))
         self.row(body, 'Status', lambda c: self.tk.Label(
-            c, text=t('Found, ready to play') if found else t('Not found: choose the folder that contains eboot.bin'),
+            c, text=t('Found, ready to play') if found else t('Not found: choose the folder that contains eboot.bin, or a .zar image'),
             bg=CARD, fg=OK_C if found else WARN_C, font=self.font(14, 'bold')).pack(side='right'))
         self.sec(body, 'SHORTCUTS')
         self.hint(body, 'Gravity Rush starts the game with the saved settings, Gravity Rush Launcher opens this window.')
