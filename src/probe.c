@@ -6,7 +6,10 @@
 #include <string.h>
 #include <inttypes.h>
 #include "runtime.h"
+#include "runtime.h"
 #include "runtime_menu.h"
+#include "runtime_zarchive.h"
+#include <ctype.h>
 #include "gpu/gow3gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -383,12 +386,8 @@ static void watchdog(int sig, siginfo_t *info, void *context) {
     _exit(128 + sig);
 }
 #endif
-/* param.sfo lookup: string or integer value of key, 0 when absent. */
-static int sfo_value(const char *path, const char *key, char *text, size_t text_size, uint32_t *number) {
-    FILE *f=fopen(path,"rb");
-    if (!f) return 0;
-    unsigned char data[65536];
-    size_t n=fread(data,1,sizeof(data),f); fclose(f);
+/* param.sfo lookup on an in-memory image: string or integer value of key, 0 when absent. */
+static int sfo_value_data(const unsigned char *data, size_t n, const char *key, char *text, size_t text_size, uint32_t *number) {
     if (n<20 || memcmp(data,"\0PSF",4)) return 0;
     uint32_t keys, values, count;
     memcpy(&keys,data+8,4); memcpy(&values,data+12,4); memcpy(&count,data+16,4);
@@ -405,6 +404,29 @@ static int sfo_value(const char *path, const char *key, char *text, size_t text_
         return 1;
     }
     return 0;
+}
+/* Same, reading the file from disk (the usual folder case). */
+static int sfo_value(const char *path, const char *key, char *text, size_t text_size, uint32_t *number) {
+    FILE *f=fopen(path,"rb");
+    if (!f) return 0;
+    unsigned char data[65536];
+    size_t n=fread(data,1,sizeof(data),f); fclose(f);
+    return sfo_value_data(data,n,key,text,text_size,number);
+}
+/* Same, reading sce_sys/param.sfo out of a .zar image passed as --app0.
+ * Folders return 0 here and keep going through sfo_value(). */
+static int sfo_value_app0(const char *app0, const char *key, char *text, size_t text_size, uint32_t *number) {
+    if (!app0) return 0;
+    size_t n=strlen(app0);
+    int zar=n>4 && app0[n-4]=='.' && tolower((unsigned char)app0[n-3])=='z' &&
+            tolower((unsigned char)app0[n-2])=='a' && tolower((unsigned char)app0[n-1])=='r';
+    if (!zar) return 0;
+    ZArchive *archive=zarchive_open(app0);
+    if (!archive) return 0;
+    unsigned char data[65536];
+    int64_t got=zarchive_read_all(archive,"sce_sys/param.sfo",data,sizeof(data));
+    zarchive_close(archive);
+    return got<0 ? 0 : sfo_value_data(data,(size_t)got,key,text,text_size,number);
 }
 static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t bytes) {
     for (uint64_t i = 0; i < count; ++i)
@@ -558,6 +580,51 @@ void runtime_restart(void) {
 #endif
 }
 
+/* --zar-list: the archive's tree as tab-separated lines (z = image size, d = dir, f = file).
+ * run.py parses exactly this format to build its extracted view. */
+static void zar_list_node(ZArchive *archive,int64_t node,const char *prefix,unsigned depth) {
+    if (depth>64) return;
+    for (uint32_t i=0;;++i) {
+        char name[256];
+        int is_file=0;
+        if (!zarchive_child(archive,node,i,name,sizeof(name),&is_file)) break;
+        char path[1024];
+        snprintf(path,sizeof(path),"%s%s%s",prefix,prefix[0]?"/":"",name);
+        if (is_file)
+            printf("f\t%llu\t%s\n",(unsigned long long)zarchive_entry_size(archive,zarchive_find(archive,path)),path);
+        else {
+            printf("d\t%s\n",path);
+            zar_list_node(archive,zarchive_find(archive,path),path,depth+1);
+        }
+    }
+}
+static int zar_list(const char *path) {
+    ZArchive *archive=zarchive_open(path);
+    if (!archive) { fprintf(stderr,"zar: %s: %s\n",path,zarchive_error()); return 1; }
+    printf("z\t%llu\n",(unsigned long long)zarchive_size(archive));
+    int64_t root=zarchive_find(archive,"");
+    if (root!=ZARCHIVE_NONE) zar_list_node(archive,root,"",0);
+    zarchive_close(archive);
+    return 0;
+}
+/* --zar-extract: one entry of the archive into a host file (used for eboot.bin and the
+ * small metadata files; the game itself never needs extracted files). */
+static int zar_extract(const char *path,const char *entry,const char *out) {
+    ZArchive *archive=zarchive_open(path);
+    if (!archive) { fprintf(stderr,"zar: %s: %s\n",path,zarchive_error()); return 1; }
+    unsigned char *buffer=(unsigned char*)malloc(16<<20);
+    if (!buffer) { fprintf(stderr,"zar: out of memory\n"); zarchive_close(archive); return 1; }
+    int64_t size=zarchive_read_all(archive,entry,buffer,16<<20);
+    zarchive_close(archive);
+    if (size<0) { fprintf(stderr,"zar: %s: entry not found or larger than 16 MiB\n",entry); free(buffer); return 1; }
+    FILE *f=fopen(out,"wb");
+    if (!f) { fprintf(stderr,"zar: cannot write %s\n",out); free(buffer); return 1; }
+    fwrite(buffer,1,(size_t)size,f);
+    fclose(f);
+    free(buffer);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 #ifndef _WIN32
@@ -567,6 +634,9 @@ int main(int argc, char **argv) {
     mallopt(M_MMAP_THRESHOLD,32*1024*1024);
 #endif
     if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
+    /* Archive utilities run before anything game-related is touched. */
+    if (argc == 3 && !strcmp(argv[1], "--zar-list")) return zar_list(argv[2]);
+    if (argc == 5 && !strcmp(argv[1], "--zar-extract")) return zar_extract(argv[2], argv[3], argv[4]);
 #ifdef _WIN32
     /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
      * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
@@ -588,7 +658,7 @@ int main(int argc, char **argv) {
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
     }
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir] [--user dir] [--patches file] [--timeout seconds] | --vulkan-only\n", argv[0]);
+           fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir|image.zar] [--user dir] [--patches file] [--timeout seconds] | --vulkan-only | --zar-list image.zar | --zar-extract image.zar entry out\n", argv[0]);
         return 1;
     }
     if (content_profile) {
@@ -606,9 +676,8 @@ int main(int argc, char **argv) {
     }
     if (app0) {
         runtime_file_configure(app0, user_dir ? user_dir : "user");
-        char sfo[4096], id[16]="";
-        snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0);
-        if (sfo_value(sfo,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value(sfo,"TITLE_ID",id,sizeof(id),NULL))
+        char id[16]="";
+        if (sfo_value_app0(app0,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value_app0(app0,"TITLE_ID",id,sizeof(id),NULL))
             runtime_savedata_configure(id);
     }
     gow3gpu_register_kernel();
@@ -739,12 +808,11 @@ int main(int argc, char **argv) {
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
     if (!cpu_only) {
-        char title[128]="PS4 game", serial[16]="UNKNOWN", sfo[4096];
+        char title[128]="PS4 game", serial[16]="UNKNOWN";
         uint32_t attributes=0;
-        snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
-        sfo_value(sfo,"TITLE",title,sizeof(title),NULL);
-        sfo_value(sfo,"TITLE_ID",serial,sizeof(serial),NULL);
-        sfo_value(sfo,"ATTRIBUTE",NULL,0,&attributes);
+        sfo_value_app0(app0,"TITLE",title,sizeof(title),NULL);
+        sfo_value_app0(app0,"TITLE_ID",serial,sizeof(serial),NULL);
+        sfo_value_app0(app0,"ATTRIBUTE",NULL,0,&attributes);
         uint64_t sdk=0;
         if (procparam) memcpy(&sdk,image+procparam+16,8); /* procparam: size, magic, count, sdk_version */
         Gow3GpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080};
@@ -801,9 +869,8 @@ int main(int argc, char **argv) {
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     menu_confirm_patch(size);
 #ifdef _WIN32
-    char hooks_sfo[4096], hooks_serial[32]="";
-    snprintf(hooks_sfo,sizeof(hooks_sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
-    sfo_value(hooks_sfo,"TITLE_ID",hooks_serial,sizeof(hooks_serial),NULL);
+    char hooks_serial[32]="";
+    sfo_value_app0(app0,"TITLE_ID",hooks_serial,sizeof(hooks_serial),NULL);
     if (getenv("GOW3_RT_TRACE") && !strcmp(hooks_serial, "CUSA01113")) install_rt_trace(size);
 #endif
 #ifdef _WIN32
