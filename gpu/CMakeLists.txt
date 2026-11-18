@@ -171,7 +171,8 @@ target_compile_definitions(gow3gpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     GOW3_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/gow3_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
-target_include_directories(gow3gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+target_include_directories(gow3gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include
+    third_party/zarchive/include ../src)
 # xbyak (header-only) from its submodule on every system: few Linux distributions package it.
 target_include_directories(gow3gpu PRIVATE third_party/xbyak)
 target_compile_definitions(gow3gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
@@ -182,7 +183,7 @@ if (NOT WIN32)
 endif()
 target_link_libraries(gow3gpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
 target_link_libraries(gow3gpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
-    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG PkgConfig::FREETYPE miniz::miniz Zydis::Zydis sirit)
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG PkgConfig::FREETYPE PkgConfig::ZSTD miniz::miniz Zydis::Zydis sirit)
 if (WIN32)
     # Guest code is entered with the System V ABI; NOMINMAX/WIN32_LEAN_AND_MEAN keep
     # <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
