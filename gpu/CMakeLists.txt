@@ -155,6 +155,7 @@ else()
     set(GOW3GPU_KIND SHARED)
 endif()
 add_library(gow3gpu ${GOW3GPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+    shim/zarchive_bridge.cpp third_party/zarchive/src/zarchivereader.cpp
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER} ${FONTLIB}
