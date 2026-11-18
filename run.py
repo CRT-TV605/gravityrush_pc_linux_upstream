@@ -8,6 +8,7 @@ The in-game "Apply and restart" runs this script again through GOW3_RESTART_COMM
 `--after PID` waits for the previous game process to end first (its GPU device and memory).
 """
 import ctypes
+import json
 import os
 from pathlib import Path
 import shlex
@@ -114,6 +115,44 @@ def find_executable(name):
     return None
 
 
+def zar_probe_run(probe, *args):
+    """One probe archive call (--zar-list / --zar-extract); its stdout, or the run stops."""
+    result = subprocess.run([str(probe), *map(str, args)], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, text=True, creationflags=no_console())
+    if result.returncode:
+        fail(f'{probe.name} {args[0]} failed ({args[1]})')
+    return result.stdout
+
+
+def zar_view(probe, archive, out):
+    """The extracted view (out/zar/game) of a .zar game image: eboot.bin, sce_module/ and
+    sce_sys/, the files the preparation scripts read. The game itself reads the image in place
+    as /app0. The view is rebuilt when the image changes (view.json remembers which one it was
+    made from)."""
+    cache = out / 'zar'
+    folder = cache / 'game'
+    marker = cache / 'view.json'
+    status = archive.stat()
+    want = json.dumps({'archive': str(archive.resolve()), 'size': status.st_size,
+                       'mtime_ns': status.st_mtime_ns})
+    have = marker.read_text(encoding='utf-8').strip() if marker.is_file() else ''
+    if have != want or not (folder / 'eboot.bin').is_file() or not (folder / 'sce_module').is_dir():
+        shutil.rmtree(cache, ignore_errors=True)
+        folder.mkdir(parents=True, exist_ok=True)
+        for line in zar_probe_run(probe, '--zar-list', archive).splitlines():
+            fields = line.split('\t')
+            if fields[0] == 'd' and len(fields) == 2:
+                (folder / fields[1]).mkdir(parents=True, exist_ok=True)
+            elif fields[0] == 'f' and len(fields) == 3 and \
+                    fields[2].startswith(('eboot.bin', 'sce_module/', 'sce_sys/')):
+                destination = folder / fields[2]
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                zar_probe_run(probe, '--zar-extract', archive, fields[2], destination)
+        marker.write_text(want + '\n', encoding='utf-8')
+        print(f'Zar: extracted the game files of {archive.name} into {folder}', flush=True)
+    return folder
+
+
 def main():
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == '--after':
@@ -188,6 +227,17 @@ def main():
             except (OSError, ValueError) as error:
                 fail(f'Could not unpack {game}: {error}')
         game = target
+    # A .zar game image: the runtime reads it in place as /app0; the preparation scripts work
+    # on a small extracted view of it (out/zar/game). Also accepted: a folder holding exactly one.
+    archive = None
+    if game.is_file() and game.suffix.lower() == '.zar':
+        archive = game
+    elif game.is_dir() and not (game / 'eboot.bin').is_file():
+        images = sorted(p for p in game.iterdir() if p.is_file() and p.suffix.lower() == '.zar')
+        if len(images) == 1:
+            archive = images[0]
+    if archive:
+        game = zar_view(probe, archive, out)
     if not (game / 'eboot.bin').is_file():
         fail(f'No eboot.bin in {game} (choose the game folder: the one with eboot.bin, sce_module and sce_sys).')
     import game_profiles
@@ -197,11 +247,17 @@ def main():
     for key, value in profile['env'].items():
         env.setdefault(key, value)
     original_game = game.resolve()
-    game = Path(run_script('mods.py', game, '--out', out,
-                           '--mods-dir', env.get('GOW3_MODS_DIR', data / 'mods'),
-                           '--config', env.get('GOW3_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('GOW3_MODS_ENABLED', '1'), capture=True).strip())
-    mod_view = game if game.resolve() != original_game else None
+    if archive:
+        # A .zar image is read-only and has no files to link over: mods need the unpacked folder.
+        print(f'Mods: none with the .zar image {archive.name} '
+              '(choose the unpacked game folder to use mods)', flush=True)
+        mod_view = None
+    else:
+        game = Path(run_script('mods.py', game, '--out', out,
+                               '--mods-dir', env.get('GOW3_MODS_DIR', data / 'mods'),
+                               '--config', env.get('GOW3_MODS_CONFIG', data / 'mods.json'),
+                               '--enabled', env.get('GOW3_MODS_ENABLED', '1'), capture=True).strip())
+        mod_view = game if game.resolve() != original_game else None
     try:
         run_script('prepare.py', game, '--out', out)
         run_script('link_libc.py', game, '--out', out)
@@ -274,7 +330,7 @@ def main():
         # Windows: CreateProcess parses it; Linux: /bin/sh -c (src/probe.c, runtime_restart).
         env['GOW3_RESTART_COMMAND'] = subprocess.list2cmdline(restart) if WINDOWS else shlex.join(restart)
         command = [str(probe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
-                   '--patches', str(out / 'patches.bin'), '--app0', str(game),
+                   '--patches', str(out / 'patches.bin'), '--app0', str(archive or game),
                    '--user', str(user_dir),
                    '--timeout', env.get('GOW3_TIMEOUT', '0'), *args]
         # No stdin: an inherited pipe (shells such as Git Bash) cost the game its console output.
