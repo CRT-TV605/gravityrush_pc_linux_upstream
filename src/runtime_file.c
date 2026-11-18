@@ -1,10 +1,15 @@
-/* Guest file system: PS4 mount points mapped onto host directories.
+/* Guest file system: PS4 mount points mapped onto host directories, or onto a packed ZArchive
+ * (.zar) game image.
  *   /app0, /hostapp  -> game package root (read-only by convention)
  *   /temp0, /download0, /data, and mounts added by SaveData -> user directory
  * Guest descriptors are small integers in our own table; stdio 0-2 pass through.
- * Paths containing ".." components are rejected rather than normalized. */
+ * Paths containing ".." components are rejected rather than normalized.
+ * With a .zar the same guest paths resolve inside the archive: reads decompress only the
+ * 64 KiB blocks they touch, and the archive is as read-only as the folder it replaces. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "runtime_zarchive.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,27 +52,42 @@ typedef struct {
 _Static_assert(sizeof(GuestStat)==120,"FreeBSD stat layout");
 
 typedef struct { char *names; size_t count, *offsets; unsigned char *types; } Listing;
-typedef struct { int used, host; Listing *dir; size_t position; char path[512]; } File;
-typedef struct { char guest[64]; char host[512]; } Mount;
+/* An open guest file: a host descriptor, or a node of the mounted archive (host is -1),
+ * plus a directory listing when the path was a directory. */
+typedef struct {
+    int used, host;
+    Listing *dir;
+    size_t position;
+    char path[512];
+    ZArchive *archive;
+    int64_t node;
+    uint64_t size;
+} File;
+typedef struct { char guest[64]; char host[512]; ZArchive *archive; } Mount;
 static File files[MAX_FILES];
 static Mount mounts[MAX_MOUNTS];
 static size_t mount_count, opens, reads, writes, missing;
 static uint64_t bytes_read;
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
 
-int runtime_file_mount(const char *guest,const char *host) {
+/* guest=host, or guest=archive (host empty, archive set). */
+static int mount_point(const char *guest,const char *host,ZArchive *archive) {
     pthread_mutex_lock(&lock);
     for (size_t i=0;i<mount_count;++i) if (!strcmp(mounts[i].guest,guest)) {
         snprintf(mounts[i].host,sizeof(mounts[i].host),"%s",host);
+        mounts[i].archive=archive;
         pthread_mutex_unlock(&lock); return 0;
     }
     if (mount_count==MAX_MOUNTS || strlen(guest)>=64 || strlen(host)>=512) { pthread_mutex_unlock(&lock); return -1; }
     snprintf(mounts[mount_count].guest,64,"%s",guest);
     snprintf(mounts[mount_count].host,512,"%s",host);
+    mounts[mount_count].archive=archive;
     ++mount_count;
     pthread_mutex_unlock(&lock);
     return 0;
 }
+int runtime_file_mount(const char *guest,const char *host) { return mount_point(guest,host,NULL); }
+static int mount_archive(const char *guest,ZArchive *archive) { return mount_point(guest,"",archive); }
 void runtime_file_unmount(const char *guest) {
     pthread_mutex_lock(&lock);
     for (size_t i=0;i<mount_count;++i) if (!strcmp(mounts[i].guest,guest)) {
@@ -77,11 +97,31 @@ void runtime_file_unmount(const char *guest) {
 }
 static char user_root[512]="user";
 const char *runtime_file_user_dir(void) { return user_root; }
+/* A .zar is chosen by its name; opening a directory as an archive is a Linux-only accident. */
+static int archive_name(const char *path) {
+    if (!path) return 0;
+    size_t n=strlen(path);
+    return n>4 && path[n-4]=='.' &&
+           tolower((unsigned char)path[n-3])=='z' &&
+           tolower((unsigned char)path[n-2])=='a' &&
+           tolower((unsigned char)path[n-1])=='r';
+}
 void runtime_file_configure(const char *app0,const char *user) {
     char path[600];
     snprintf(user_root,sizeof(user_root),"%s",user);
-    runtime_file_mount("/app0",app0);
-    runtime_file_mount("/hostapp",app0);
+    ZArchive *archive=archive_name(app0) ? zarchive_open(app0) : NULL;
+    if (archive) {
+        mount_archive("/app0",archive);
+        mount_archive("/hostapp",archive);
+        printf("Runtime: /app0 is the ZArchive %s (%llu bytes)\n",app0,
+               (unsigned long long)zarchive_size(archive));
+    } else {
+        if (archive_name(app0))
+            printf("Runtime: %s is not usable as a ZArchive (%s); using it as a folder\n",
+                   app0,zarchive_error());
+        runtime_file_mount("/app0",app0);
+        runtime_file_mount("/hostapp",app0);
+    }
     const char *writable[]={"temp0","download0","data"};
     mkdir(user,0755);
     for (int i=0;i<3;++i) {
