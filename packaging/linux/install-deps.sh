@@ -15,7 +15,7 @@ if command -v apt-get >/dev/null; then
         python3 python3-venv python3-pip libpython3-dev python3-tk python3-pil python3-pil.imagetk python3-cryptography \
         libvulkan-dev glslang-tools libvulkan-memory-allocator-dev libsdl3-dev \
         libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
-        libboost-dev libfmt-dev robin-map-dev libxxhash-dev libzydis-dev libx11-dev libfreetype-dev \
+        libboost-dev libfmt-dev robin-map-dev libxxhash-dev libzydis-dev libx11-dev libfreetype-dev libzstd-dev \
         spirv-cross perl \
         nasm zlib1g-dev libxext-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev libxfixes-dev \
         libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libpipewire-0.3-dev \
@@ -28,7 +28,7 @@ elif command -v dnf >/dev/null; then
         vulkan-headers vulkan-loader-devel glslang vulkan-memory-allocator-devel SDL3-devel \
         libavcodec-free-devel libavformat-free-devel libavutil-free-devel libswscale-free-devel \
         libswresample-free-devel boost-devel fmt-devel robin-map-devel xxhash-devel zydis-devel \
-        libX11-devel freetype-devel spirv-tools spirv-cross perl nasm
+        libX11-devel freetype-devel libzstd-devel spirv-tools spirv-cross perl nasm
 elif command -v pacman >/dev/null; then
     "${sudo[@]}" pacman -S --needed --noconfirm \
         base-devel cmake ninja pkgconf git curl file patchelf squashfs-tools \
