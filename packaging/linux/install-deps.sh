@@ -34,7 +34,7 @@ elif command -v pacman >/dev/null; then
         base-devel cmake ninja pkgconf git curl file patchelf squashfs-tools \
         python python-pillow python-cryptography tk \
         vulkan-headers vulkan-icd-loader glslang vulkan-memory-allocator sdl3 ffmpeg \
-        boost fmt robin-map xxhash zydis libx11 freetype2 spirv-cross perl nasm
+        boost fmt robin-map xxhash zydis libx11 freetype2 zstd spirv-cross perl nasm
 else
     echo 'Unknown distribution: install the packages listed in packaging/linux/README-Linux.md.' >&2
     exit 1
