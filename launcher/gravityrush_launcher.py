@@ -395,9 +395,45 @@ def save_ini(values, lines):
     ini_path().write_text('\n'.join(out) + '\n', encoding='utf-8')
 
 
+def zar_probe():
+    """The probe executable (it reads .zar archives: --zar-list, --zar-extract)."""
+    for candidate in (PORT_DIR / 'bin' / f'probe{platform_paths.EXE}',
+                      PORT_DIR / 'out' / f'probe{platform_paths.EXE}'):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def zar_sfo_values(archive):
+    """TITLE/APP_VER/TITLE_ID/... of a .zar game image, read with the probe's --zar-extract."""
+    probe = zar_probe()
+    if not probe:
+        return {}
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / 'param.sfo'
+        try:
+            result = subprocess.run(
+                [str(probe), '--zar-extract', str(archive), 'sce_sys/param.sfo', str(target)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=30, creationflags=NO_WINDOW)
+        except (OSError, subprocess.TimeoutExpired):
+            return {}
+        if result.returncode or not target.is_file():
+            return {}
+        try:
+            from prepare import sfo
+            return sfo(target.read_bytes())
+        except (OSError, ValueError, ImportError):
+            return {}
+
+
 def game_info(folder):
-    """(title, app version) of a game folder, or None without eboot.bin."""
+    """(title, app version) of a game folder or .zar image, or None without eboot.bin."""
     folder = Path(folder or '.')
+    if folder.is_file() and folder.suffix.lower() == '.zar':
+        values = zar_sfo_values(folder)
+        return (values.get('TITLE', APP_NAME).replace('™', '').replace('®', '').strip(),
+                values.get('APP_VER', '?'))
     if not (folder / 'eboot.bin').is_file():
         return None
     try:
@@ -411,7 +447,13 @@ def game_info(folder):
 def game_profile_of(folder):
     """(title id, (ids, built-in XML, app version)) of a game with a patch profile, else (id, None)."""
     from patches import game_profile, game_title_id
-    title_id = game_title_id(folder) if folder else None
+    title_id = None
+    if folder:
+        folder = Path(folder)
+        if folder.is_file() and folder.suffix.lower() == '.zar':
+            title_id = zar_sfo_values(folder).get('TITLE_ID')
+        else:
+            title_id = game_title_id(folder)
     return title_id, game_profile(title_id)
 
 
@@ -852,7 +894,9 @@ def main():
         shutil.rmtree(UPDATE_DIR, ignore_errors=True)  # what a finished update left behind
     # --play (Gravity Rush.exe): the game at once. Without a usable game folder there is nothing to
     # play yet: open the launcher instead.
-    if '--play' in args and (Path(settings['game_dir'] or '.') / 'eboot.bin').is_file():
+    game_path = Path(settings['game_dir'] or '.')
+    if '--play' in args and ((game_path / 'eboot.bin').is_file() or
+                             (game_path.is_file() and game_path.suffix.lower() == '.zar')):
         sys.exit(play_without_window(settings))
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on scaled displays
