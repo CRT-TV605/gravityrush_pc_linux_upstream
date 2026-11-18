@@ -434,6 +434,15 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
     return n;
 }
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
+    File *f=get(fd);
+    if (f && f->archive) {
+        if (size>0x7ffff000) size=0x7ffff000;
+        if (offset<0 || (uint64_t)offset>=f->size) return 0;
+        touch_for_write(buffer,size);
+        uint64_t n=zarchive_read(f->archive,f->node,(uint64_t)offset,buffer,size);
+        __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,n,__ATOMIC_RELAXED);
+        return (int64_t)n;
+    }
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
@@ -443,6 +452,8 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     return n;
 }
 static int64_t do_write(int fd,const void *buffer,uint64_t size) {
+    File *f=get(fd);
+    if (f && f->archive) return -EROFS; /* the archive is read-only, like the folder it replaces */
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     ssize_t n=host_write(h,buffer,size);
@@ -451,6 +462,8 @@ static int64_t do_write(int fd,const void *buffer,uint64_t size) {
     return n;
 }
 static int64_t do_pwrite(int fd,const void *buffer,uint64_t size,int64_t offset) {
+    File *f=get(fd);
+    if (f && f->archive) return -EROFS;
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     ssize_t n=pwrite(h,buffer,size,offset);
@@ -465,15 +478,39 @@ static int64_t do_lseek(int fd,int64_t offset,int whence) {
         if (whence==0 && offset>=0) { f->position=(size_t)offset; return offset; }
         return -EINVAL;
     }
+    if (f->archive) {
+        int64_t base=whence==0 ? 0 : whence==1 ? (int64_t)f->position : (int64_t)f->size;
+        int64_t next=base+offset;
+        if (next<0 || (uint64_t)next>f->size) return -EINVAL;
+        f->position=(size_t)next;
+        return next;
+    }
     int64_t r=host_lseek(f->host,offset,whence);
     return r<0 ? -errno : r;
 }
+/* Fills a guest stat for an archive node: files look like regular 0644 files, directories like
+ * rwxr-xr-x dirs; the format stores no per-entry timestamps, so the time fields stay zero. */
+static void archive_stat(const ZArchive *archive,int64_t node,GuestStat *out) {
+    memset(out,0,sizeof(*out));
+    out->nlink=1; out->blksize=4096;
+    if (zarchive_is_file(archive,node)) {
+        out->mode=0100644;
+        out->size=(int64_t)zarchive_entry_size(archive,node);
+        out->blocks=(out->size+511)/512;
+    } else out->mode=0040755;
+}
 static int64_t do_fstat(int fd,GuestStat *out) {
+    File *f=get(fd);
+    if (f && f->archive) {
+        if (!out) return -EFAULT;
+        archive_stat(f->archive,f->node,out);
+        return 0;
+    }
     int h=host_fd(fd);
     HostStat s;
 #ifdef _WIN32
     if (h<0) { /* directory: a listing only, stat the path it was opened with */
-        File *f=get(fd); char path[1024];
+        char path[1024];
         if (!f || !f->dir) return -EBADF;
         if (!out) return -EFAULT;
         if (translate(f->path,path,sizeof(path)) || host_stat(path,&s)) return -EBADF;
@@ -487,11 +524,16 @@ static int64_t do_fstat(int fd,GuestStat *out) {
     convert_stat(&s,out); return 0;
 }
 static int64_t do_stat(const char *guest,GuestStat *out) {
-    char path[1024]; HostStat s;
-    int e=translate(guest,path,sizeof(path));
+    Target target;
+    int e=resolve(guest,&target);
     if (e) return -e;
     if (!out) return -EFAULT;
-    if (host_stat(path,&s)) return -errno;
+    if (target.archive) {
+        archive_stat(target.archive,target.node,out);
+        return 0;
+    }
+    HostStat s;
+    if (host_stat(target.host,&s)) return -errno;
     convert_stat(&s,out); return 0;
 }
 static int64_t do_getdents(int fd,char *buffer,uint64_t size,int64_t *basep) {
@@ -570,13 +612,15 @@ static int64_t do_truncate(const char *guest,int64_t length) {
 }
 static int64_t do_fsync(int fd) { int h=host_fd(fd); if (h<0) return -EBADF; return fsync(h) ? -errno : 0; }
 static int64_t do_access(const char *guest,int mode) {
-    char path[1024];
-    int e=translate(guest,path,sizeof(path));
+    Target target;
+    int e=resolve(guest,&target);
     if (e) return -e;
+    if (target.archive)
+        return mode&(W_OK|X_OK) ? -EROFS : 0; /* archive contents are read-only data */
 #ifdef _WIN32
-    return access(path,mode&6) ? -errno : 0; /* X_OK is invalid for the CRT */
+    return access(target.host,mode&6) ? -errno : 0; /* X_OK is invalid for the CRT */
 #else
-    return access(path,mode&7) ? -errno : 0;
+    return access(target.host,mode&7) ? -errno : 0;
 #endif
 }
 
