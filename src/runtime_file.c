@@ -131,8 +131,15 @@ void runtime_file_configure(const char *app0,const char *user) {
         runtime_file_mount(guest,path);
     }
 }
-/* Resolve a guest path to a host path; returns 0 or a host errno. */
-static int translate(const char *guest,char *out,size_t size) {
+/* What a guest path resolves to: a host path, or a node of a mounted archive. */
+typedef struct { ZArchive *archive; int64_t node; char host[1024]; } Target;
+/* Resolve a guest path (absolute, or relative to /app0) against the mount table; mounts are
+ * matched longest-first, as before. A mount backed by an archive resolves inside it: the rest
+ * of the path ("", or "sce_sys/param.sfo") becomes a node of that archive. */
+static int resolve(const char *guest,Target *target) {
+    target->archive=NULL;
+    target->node=ZARCHIVE_NONE;
+    target->host[0]='\0';
     if (!guest || !*guest) return ENOENT;
     char buffer[1024];
     if (guest[0]!='/') snprintf(buffer,sizeof(buffer),"/app0/%s",guest);
@@ -145,12 +152,29 @@ static int translate(const char *guest,char *out,size_t size) {
         size_t n=strlen(mounts[i].guest);
         if (!strncmp(buffer,mounts[i].guest,n) && (buffer[n]=='/' || !buffer[n]) && n>best) { best=n; m=&mounts[i]; }
     }
+    ZArchive *archive=m ? m->archive : NULL;
+    const char *rest=buffer+best; /* the path below the mount point */
     int result=0;
     if (!m) result=ENOENT;
-    else if ((size_t)snprintf(out,size,"%s%s",m->host,buffer+best)>=size) result=ENAMETOOLONG;
+    else if (!archive && (size_t)snprintf(target->host,sizeof(target->host),"%s%s",m->host,rest)>=sizeof(target->host)) result=ENAMETOOLONG;
     pthread_mutex_unlock(&lock);
     if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
+    if (result) return result;
+    if (archive) {
+        while (*rest=='/') ++rest;
+        target->archive=archive;
+        target->node=zarchive_find(archive,rest);
+        if (target->node==ZARCHIVE_NONE) return ENOENT;
+    }
     return result;
+}
+/* Host-path convenience wrapper for callers that do not deal with archives. */
+static int translate(const char *guest,char *out,size_t size) {
+    Target target;
+    int e=resolve(guest,&target);
+    if (e) return e;
+    if (target.archive) return ENOENT; /* the path is inside the archive, not on disk */
+    return (size_t)snprintf(out,size,"%s",target.host)>=size ? ENAMETOOLONG : 0;
 }
 static int host_flags(int flags) {
     int r;
@@ -204,6 +228,44 @@ static Listing *list_directory(const char *path) {
     closedir(d);
     return l;
 }
+/* Directory listing of a node inside the archive; same shape as list_directory. */
+static Listing *list_archive(ZArchive *archive,int64_t node) {
+    Listing *l=(Listing*)calloc(1,sizeof(Listing));
+    if (!l) return NULL;
+    size_t cap=16, used=0, cap_names=4096;
+    l->names=(char*)malloc(cap_names);
+    l->offsets=(size_t*)malloc(cap*sizeof(size_t));
+    l->types=(unsigned char*)malloc(cap);
+    if (!l->names || !l->offsets || !l->types) {
+        free(l->names); free(l->offsets); free(l->types); free(l);
+        return NULL;
+    }
+    for (uint32_t i=0;;++i) {
+        char name[256];
+        int is_file=0;
+        if (!zarchive_child(archive,node,i,name,sizeof(name),&is_file)) break;
+        size_t n=strlen(name)+1;
+        while (used+n>cap_names) {
+            cap_names*=2;
+            char *grown=(char*)realloc(l->names,cap_names);
+            if (!grown) { free_listing(l); return NULL; }
+            l->names=grown;
+        }
+        if (l->count==cap) {
+            cap*=2;
+            size_t *goff=(size_t*)realloc(l->offsets,cap*sizeof(size_t));
+            unsigned char *gty=(unsigned char*)realloc(l->types,cap);
+            if (!goff || !gty) { free(goff); free(gty); free_listing(l); return NULL; }
+            l->offsets=goff; l->types=gty;
+        }
+        memcpy(l->names+used,name,n);
+        l->offsets[l->count]=used;
+        l->types[l->count]=is_file ? DT_REG : DT_DIR;
+        used+=n;
+        ++l->count;
+    }
+    return l;
+}
 static void convert_stat(const HostStat *s,GuestStat *g) {
     memset(g,0,sizeof(*g));
     g->dev=(uint32_t)s->st_dev; g->ino=(uint32_t)s->st_ino;
@@ -241,42 +303,56 @@ static int game_path(const char *p) {
 /* All operations return >=0 or -(host errno); wrappers adapt the convention. */
 static int64_t do_open(const char *guest,int flags,int mode) {
     if (game_path(guest) && (flags & (3|0x8|0x200|0x400|0x800))) return -EROFS;
-    char path[1024];
-    int e=translate(guest,path,sizeof(path));
+    Target target;
+    int e=resolve(guest,&target);
     if (e) return -e;
+    int host=-1;
+    Listing *dir=NULL;
+    uint64_t entry_size=0;
+    if (target.archive) {
+        /* The archive is as read-only as the game folder it replaces. */
+        if (flags & (3|0x8|0x200|0x400|0x800)) return -EROFS;
+        const int is_file=zarchive_is_file(target.archive,target.node);
+        if ((flags&0x20000) && is_file) return -ENOTDIR;
+        if (is_file) entry_size=zarchive_entry_size(target.archive,target.node);
+        else {
+            if (flags&3) return -EISDIR;
+            if (!(dir=list_archive(target.archive,target.node))) return -EACCES;
+        }
+    } else {
 #ifdef _WIN32
     /* Windows cannot open a directory as a CRT descriptor: directories are listings only. */
     (void)mode;
     HostStat s;
-    Listing *dir=NULL;
-    int host=-1;
-    if (!host_stat(path,&s) && S_ISDIR(s.st_mode)) {
+    if (!host_stat(target.host,&s) && S_ISDIR(s.st_mode)) {
         if (flags&3) return -EISDIR;
-        if (!(dir=list_directory(path))) return -EACCES;
+        if (!(dir=list_directory(target.host))) return -EACCES;
     } else if (flags&0x20000) {
         e=errno==ENOENT ? ENOENT : ENOTDIR;
         if (e==ENOENT) { ++missing; printf("Runtime: open(%s) -> not found\n",guest); }
         return -e;
     } else {
-        host=open(path,host_flags(flags)&~O_DIRECTORY,_S_IREAD|_S_IWRITE);
+        host=open(target.host,host_flags(flags)&~O_DIRECTORY,_S_IREAD|_S_IWRITE);
         if (host<0) {
             e=errno;
             if (e==ENOENT) { ++missing; printf("Runtime: open(%s) -> not found\n",guest); }
             return -e;
         }
         if (host_fstat(host,&s)) memset(&s,0,sizeof(s));
+        entry_size=(uint64_t)s.st_size;
     }
 #else
-    int host=open(path,host_flags(flags),mode ? mode : 0644);
+    host=open(target.host,host_flags(flags),mode ? mode : 0644);
     if (host<0) {
         e=errno;
         if (e==ENOENT) { ++missing; printf("Runtime: open(%s) -> not found\n",guest); }
         return -e;
     }
     struct stat s;
-    Listing *dir=NULL;
-    if (!fstat(host,&s) && S_ISDIR(s.st_mode)) dir=list_directory(path);
+    if (!fstat(host,&s) && S_ISDIR(s.st_mode)) dir=list_directory(target.host);
+    else entry_size=(uint64_t)s.st_size;
 #endif
+    }
     /* GOW3_FILE_TRACE=1: every file the game opens (mod and pak override checks). */
     static int file_trace=-1;
     if (file_trace<0) { const char *t=getenv("GOW3_FILE_TRACE"); file_trace=t && t[0]=='1'; }
@@ -285,16 +361,16 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     int fd=-1;
     for (int i=3;i<MAX_FILES;++i) if (!files[i].used) { fd=i; break; }
     if (fd<0) { pthread_mutex_unlock(&lock); if (host>=0) close(host); free_listing(dir); return -EMFILE; }
-    files[fd]=(File){.used=1,.host=host,.dir=dir};
+    files[fd]=(File){.used=1,.host=host,.dir=dir,.archive=target.archive,.node=target.node,.size=entry_size};
     snprintf(files[fd].path,sizeof(files[fd].path),"%s",guest);
     ++opens;
     pthread_mutex_unlock(&lock);
-    if (audio_trace() && strstr(guest,"sound/")) printf("Audio trace: open(%s) -> fd %d, %lld bytes\n",guest,fd,(long long)s.st_size);
+    if (audio_trace() && strstr(guest,"sound/")) printf("Audio trace: open(%s) -> fd %d, %lld bytes\n",guest,fd,(long long)entry_size);
     const char *mod_trace=getenv("GOW3_MOD_TRACE"), *mod_root=getenv("GOW3_MODS_DIR");
-    if (mod_trace && mod_trace[0]=='1' && mod_root) {
+    if (mod_trace && mod_trace[0]=='1' && mod_root && !target.archive) {
         char actual[PATH_MAX],root[PATH_MAX];
         static unsigned traced;
-        if (realpath(path,actual) && realpath(mod_root,root)) {
+        if (realpath(target.host,actual) && realpath(mod_root,root)) {
             size_t n=strlen(root);
             if (!strncmp(actual,root,n) && (actual[n]=='/' || actual[n]=='\\') &&
                 __atomic_fetch_add(&traced,1,__ATOMIC_RELAXED)<32)
@@ -339,6 +415,16 @@ static void touch_for_write(void *buffer,uint64_t size) {
     }
 }
 static int64_t do_read(int fd,void *buffer,uint64_t size) {
+    File *f=get(fd);
+    if (f && f->archive) {
+        if (size>0x7ffff000) size=0x7ffff000;
+        touch_for_write(buffer,size);
+        uint64_t n=zarchive_read(f->archive,f->node,f->position,buffer,size);
+        if (!n && f->position<f->size) return -EIO;
+        f->position+=n;
+        __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,n,__ATOMIC_RELAXED);
+        return (int64_t)n;
+    }
     int h=host_fd(fd);
     if (h<0) return -EBADF;
     touch_for_write(buffer,size);
