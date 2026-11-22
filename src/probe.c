@@ -711,6 +711,9 @@ int main(int argc, char **argv) {
     /* Archive utilities run before anything game-related is touched. */
     if (argc == 3 && !strcmp(argv[1], "--zar-list")) return zar_list(argv[2]);
     if (argc == 5 && !strcmp(argv[1], "--zar-extract")) return zar_extract(argv[2], argv[3], argv[4]);
+    /* Archive utilities run before anything game-related is touched. */
+    if (argc == 3 && !strcmp(argv[1], "--zar-list")) return zar_list(argv[2]);
+    if (argc == 5 && !strcmp(argv[1], "--zar-extract")) return zar_extract(argv[2], argv[3], argv[4]);
 #ifdef _WIN32
     /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
      * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
