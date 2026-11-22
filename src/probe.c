@@ -10,8 +10,6 @@
 #include "runtime_menu.h"
 #include "runtime_zarchive.h"
 #include <ctype.h>
-#include "runtime_zarchive.h"
-#include <ctype.h>
 #include "gpu/gow3gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
@@ -434,29 +432,6 @@ static int sfo_value_app0(const char *app0, const char *key, char *text, size_t 
     snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0);
     return sfo_value(path,key,text,text_size,number);
 }
-/* Same, reading the file from disk (the usual folder case). */
-static int sfo_value(const char *path, const char *key, char *text, size_t text_size, uint32_t *number) {
-    FILE *f=fopen(path,"rb");
-    if (!f) return 0;
-    unsigned char data[65536];
-    size_t n=fread(data,1,sizeof(data),f); fclose(f);
-    return sfo_value_data(data,n,key,text,text_size,number);
-}
-/* Same, reading sce_sys/param.sfo out of a .zar image passed as --app0.
- * Folders return 0 here and keep going through sfo_value(). */
-static int sfo_value_app0(const char *app0, const char *key, char *text, size_t text_size, uint32_t *number) {
-    if (!app0) return 0;
-    size_t n=strlen(app0);
-    int zar=n>4 && app0[n-4]=='.' && tolower((unsigned char)app0[n-3])=='z' &&
-            tolower((unsigned char)app0[n-2])=='a' && tolower((unsigned char)app0[n-1])=='r';
-    if (!zar) return 0;
-    ZArchive *archive=zarchive_open(app0);
-    if (!archive) return 0;
-    unsigned char data[65536];
-    int64_t got=zarchive_read_all(archive,"sce_sys/param.sfo",data,sizeof(data));
-    zarchive_close(archive);
-    return got<0 ? 0 : sfo_value_data(data,(size_t)got,key,text,text_size,number);
-}
 static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t bytes) {
     for (uint64_t i = 0; i < count; ++i)
         if (address >= segments[i].address && bytes <= segments[i].size &&
@@ -607,51 +582,6 @@ void runtime_restart(void) {
     /* The new launch waits for the old run.py, which ends with this process (run.py --after). */
     _exit(0);
 #endif
-}
-
-/* --zar-list: the archive's tree as tab-separated lines (z = image size, d = dir, f = file).
- * run.py parses exactly this format to build its extracted view. */
-static void zar_list_node(ZArchive *archive,int64_t node,const char *prefix,unsigned depth) {
-    if (depth>64) return;
-    for (uint32_t i=0;;++i) {
-        char name[256];
-        int is_file=0;
-        if (!zarchive_child(archive,node,i,name,sizeof(name),&is_file)) break;
-        char path[1024];
-        snprintf(path,sizeof(path),"%s%s%s",prefix,prefix[0]?"/":"",name);
-        if (is_file)
-            printf("f\t%llu\t%s\n",(unsigned long long)zarchive_entry_size(archive,zarchive_find(archive,path)),path);
-        else {
-            printf("d\t%s\n",path);
-            zar_list_node(archive,zarchive_find(archive,path),path,depth+1);
-        }
-    }
-}
-static int zar_list(const char *path) {
-    ZArchive *archive=zarchive_open(path);
-    if (!archive) { fprintf(stderr,"zar: %s: %s\n",path,zarchive_error()); return 1; }
-    printf("z\t%llu\n",(unsigned long long)zarchive_size(archive));
-    int64_t root=zarchive_find(archive,"");
-    if (root!=ZARCHIVE_NONE) zar_list_node(archive,root,"",0);
-    zarchive_close(archive);
-    return 0;
-}
-/* --zar-extract: one entry of the archive into a host file (used for eboot.bin and the
- * small metadata files; the game itself never needs extracted files). */
-static int zar_extract(const char *path,const char *entry,const char *out) {
-    ZArchive *archive=zarchive_open(path);
-    if (!archive) { fprintf(stderr,"zar: %s: %s\n",path,zarchive_error()); return 1; }
-    unsigned char *buffer=(unsigned char*)malloc(16<<20);
-    if (!buffer) { fprintf(stderr,"zar: out of memory\n"); zarchive_close(archive); return 1; }
-    int64_t size=zarchive_read_all(archive,entry,buffer,16<<20);
-    zarchive_close(archive);
-    if (size<0) { fprintf(stderr,"zar: %s: entry not found or larger than 16 MiB\n",entry); free(buffer); return 1; }
-    FILE *f=fopen(out,"wb");
-    if (!f) { fprintf(stderr,"zar: cannot write %s\n",out); free(buffer); return 1; }
-    fwrite(buffer,1,(size_t)size,f);
-    fclose(f);
-    free(buffer);
-    return 0;
 }
 
 /* --zar-list: the archive's tree as tab-separated lines (z = image size, d = dir, f = file).
